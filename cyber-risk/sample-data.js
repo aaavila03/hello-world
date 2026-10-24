@@ -1,0 +1,58 @@
+export const SAMPLE_RISKS = [
+  {
+    title: "Ransomware attack on file servers",
+    description: "Ransomware delivered via phishing could encrypt shared drives and halt operations for days.",
+    asset: "Windows file servers", category: "Ransomware/Malware", likelihood: 4, impact: 5,
+    residualLikelihood: 2, residualImpact: 4, owner: "IT Operations", status: "In treatment", treatment: "Mitigate",
+    controls: "Nightly backups (not immutable)\nAntivirus on endpoints", due: "2026-12-15",
+  },
+  {
+    title: "Business email compromise of finance team",
+    description: "Attackers impersonate suppliers to redirect invoice payments.",
+    asset: "Microsoft 365 / Finance", category: "Phishing/Social Engineering", likelihood: 4, impact: 4,
+    residualLikelihood: 2, residualImpact: 3, owner: "CFO", status: "Open", treatment: "Mitigate",
+    controls: "Email filtering", due: "2026-11-30",
+  },
+  {
+    title: "Public S3 bucket exposing customer exports",
+    description: "Misconfigured cloud storage could expose customer PII to the internet.",
+    asset: "AWS production account", category: "Cloud Misconfiguration", likelihood: 3, impact: 5,
+    residualLikelihood: 1, residualImpact: 5, owner: "Cloud Platform Lead", status: "Open", treatment: "Mitigate",
+    controls: "Manual reviews", due: "2026-11-15",
+  },
+  {
+    title: "Unpatched VPN appliance",
+    description: "Internet-facing VPN is two firmware versions behind with known critical CVEs.",
+    asset: "Remote access VPN", category: "Vulnerability/Patching", likelihood: 5, impact: 5,
+    residualLikelihood: 2, residualImpact: 4, owner: "Network Team", status: "Open", treatment: "Mitigate",
+    controls: "", due: "2026-10-20",
+  },
+  {
+    title: "Payroll SaaS provider breach",
+    description: "A breach at our payroll vendor could expose employee bank details.",
+    asset: "Payroll SaaS", category: "Third-Party/Supply Chain", likelihood: 2, impact: 4,
+    residualLikelihood: 2, residualImpact: 3, owner: "HR Director", status: "Accepted", treatment: "Transfer",
+    controls: "SOC 2 report reviewed annually\nCyber insurance", due: "",
+  },
+  {
+    title: "Shared admin accounts without MFA",
+    description: "Several infrastructure admin accounts are shared and lack MFA.",
+    asset: "Active Directory", category: "Identity & Access", likelihood: 4, impact: 4,
+    residualLikelihood: 1, residualImpact: 4, owner: "IAM Lead", status: "In treatment", treatment: "Mitigate",
+    controls: "Password rotation every 90 days", due: "2026-12-01",
+  },
+  {
+    title: "Leaver access not revoked promptly",
+    description: "Accounts for departing staff sometimes stay active for weeks.",
+    asset: "HR / IAM process", category: "Insider Threat", likelihood: 3, impact: 3,
+    residualLikelihood: 1, residualImpact: 3, owner: "HR Director", status: "Open", treatment: "Mitigate",
+    controls: "Manual ticket to IT", due: "2027-01-15",
+  },
+  {
+    title: "GDPR non-compliance in marketing data",
+    description: "Marketing holds personal data without documented lawful basis or retention limits.",
+    asset: "CRM", category: "Compliance/Regulatory", likelihood: 3, impact: 3,
+    residualLikelihood: 2, residualImpact: 2, owner: "DPO", status: "Open", treatment: "Mitigate",
+    controls: "Privacy policy", due: "2027-02-01",
+  },
+];
