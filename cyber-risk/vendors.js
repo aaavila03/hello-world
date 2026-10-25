@@ -1,6 +1,7 @@
 // Vendor (third-party) risk assessment: inventory, security questionnaire,
 // tiering, review scheduling and Claude-powered due diligence.
 import { assessVendorOffline } from "./heuristics.js";
+import { INTAKE_QUESTIONS, summarizeIntake, deriveControlAnswers, validateIntake } from "./intake-questions.js";
 
 export const VENDOR_STORE_KEY = "riskpilot.vendors";
 
@@ -154,7 +155,7 @@ export function initVendors({ $, $$, escapeHtml, toast, download, safeGet, safeS
       const inh = inherentTier(v), res = residualTier(v), pct = controlScore(v), due = nextReview(v);
       return `<tr>
         <td>${escapeHtml(v.id)}</td>
-        <td><strong>${escapeHtml(v.name)}</strong><div class="muted small">${escapeHtml(v.service)}</div></td>
+        <td><strong>${escapeHtml(v.name)}</strong>${v.intake ? ' <span class="tag" title="Intake questionnaire received">intake ✓</span>' : ""}<div class="muted small">${escapeHtml(v.service)}</div></td>
         <td>${escapeHtml(v.criticality)}</td>
         <td>${escapeHtml(v.dataSensitivity)}</td>
         <td><span class="badge ${tierClass(inh)}">${inh}</span></td>
@@ -185,6 +186,7 @@ export function initVendors({ $, $$, escapeHtml, toast, download, safeGet, safeS
   const form = $("#vendor-form");
   let editingId = null;
   let pendingAssessment = null;
+  let pendingIntake = null;
 
   function readForm() {
     const data = Object.fromEntries(new FormData(form));
@@ -209,6 +211,7 @@ export function initVendors({ $, $$, escapeHtml, toast, download, safeGet, safeS
   function openEditor(vendor) {
     editingId = vendor?.id ?? null;
     pendingAssessment = vendor?.aiAssessment ?? null;
+    pendingIntake = vendor?.intake ?? null;
     form.reset();
     $("#vendor-dialog-title").textContent = vendor ? `Edit ${vendor.id} · ${vendor.name}` : "New vendor";
     $("#btn-vendor-delete").classList.toggle("hidden", !vendor);
@@ -220,9 +223,77 @@ export function initVendors({ $, $$, escapeHtml, toast, download, safeGet, safeS
     const panel = $("#vendor-ai-panel");
     if (pendingAssessment) showAssessment(pendingAssessment);
     else panel.classList.add("hidden");
+    renderIntake();
     updateLiveScore();
     dialog.showModal();
   }
+
+  // ---------- intake questionnaire ----------
+  function renderIntake() {
+    const box = $("#vendor-intake");
+    if (!pendingIntake) {
+      box.innerHTML = `<span class="muted">No response yet. Copy the link, send it to the vendor, then import the file they send back.</span>`;
+      return;
+    }
+    const s = summarizeIntake(pendingIntake);
+    const p = pendingIntake.profile;
+    const flagList = s.flags.map((f) => `<li><span class="iq-id">${escapeHtml(f.id)}</span> ${escapeHtml(f.text)} <strong>${escapeHtml(f.answer)}</strong>${f.comment ? ` – <em>${escapeHtml(f.comment)}</em>` : ""}</li>`).join("");
+    box.innerHTML = `
+      <div><strong>Response received</strong> ${pendingIntake.submittedAt ? escapeHtml(pendingIntake.submittedAt.slice(0, 10)) : ""}
+        from ${escapeHtml(p.contactName || "unknown")}${p.contactEmail ? ` (${escapeHtml(p.contactEmail)})` : ""}
+        ${pendingIntake.attested ? "" : ' <span class="tag p-high">not attested</span>'}</div>
+      <div>Intake score <strong>${s.score ?? "–"}%</strong> · ${s.counts.Yes} Yes · ${s.counts.No} No · ${s.counts["N/A"]} N/A · ${s.counts.unanswered} unanswered</div>
+      <div class="small">Certifications: ${escapeHtml(p.certifications?.join(", ") || "none listed")}${p.dataLocations ? ` · Data locations: ${escapeHtml(p.dataLocations)}` : ""}</div>
+      ${s.flags.length ? `<details><summary>${s.flags.length} answer(s) needing attention</summary><ul>${flagList}</ul></details>` : ""}`;
+  }
+
+  $("#btn-intake-link").addEventListener("click", async () => {
+    const name = form.elements.name.value.trim();
+    if (!name) return toast("Add a vendor name first", true);
+    const url = new URL("intake.html", location.href);
+    url.searchParams.set("v", name);
+    if (editingId) url.searchParams.set("ref", editingId);
+    try {
+      await navigator.clipboard.writeText(url.href);
+      toast("Intake link copied – send it to the vendor");
+    } catch {
+      prompt("Copy this link and send it to the vendor:", url.href);
+    }
+  });
+
+  $("#intake-file").addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    let data;
+    try {
+      data = validateIntake(JSON.parse(await file.text()));
+    } catch (err) {
+      return toast(`Import failed: ${err.message}`, true);
+    }
+    if (editingId && data.vendorRef && data.vendorRef !== editingId
+      && !confirm(`This response was sent for ${data.vendorRef}${data.vendorName ? ` (${data.vendorName})` : ""}, not ${editingId}. Import it anyway?`)) return;
+
+    pendingIntake = data;
+    const f = form.elements;
+    const p = data.profile;
+    if (!f.name.value && p.legalName) f.name.value = p.legalName;
+    if (!f.service.value && p.serviceDescription) f.service.value = p.serviceDescription.split(/[.\n]/)[0].slice(0, 120);
+    if (!f.dataTypes.value && p.dataTypes?.length) f.dataTypes.value = p.dataTypes.join(", ");
+    if (p.access) f.access.value = p.access;
+    // Raise (never lower) data sensitivity based on the data types declared.
+    const levels = ["None", "Internal", "Confidential", "Regulated (PII/PHI/PCI)"];
+    const types = p.dataTypes || [];
+    const declared = types.some((t) => /PII|PHI|card/i.test(t)) ? 3
+      : types.some((t) => /Financial|Employee|Credentials|Confidential/i.test(t)) ? 2 : 0;
+    if (declared > levels.indexOf(f.dataSensitivity.value)) f.dataSensitivity.value = levels[declared];
+
+    const derived = deriveControlAnswers(data);
+    for (const [id, a] of Object.entries(derived)) if (f[`q_${id}`]) f[`q_${id}`].value = a;
+    renderIntake();
+    updateLiveScore();
+    toast(`Intake imported – ${Object.keys(derived).length} questionnaire controls filled in. Click Save to keep it.`);
+  });
 
   $("#btn-vendor-add").addEventListener("click", () => openEditor(null));
   $("#btn-vendor-cancel").addEventListener("click", () => dialog.close());
@@ -235,7 +306,7 @@ export function initVendors({ $, $$, escapeHtml, toast, download, safeGet, safeS
 
   form.addEventListener("submit", (e) => {
     e.preventDefault();
-    const data = { ...readForm(), aiAssessment: pendingAssessment };
+    const data = { ...readForm(), aiAssessment: pendingAssessment, intake: pendingIntake };
     if (editingId) {
       vendors = vendors.map((v) => (v.id === editingId ? { ...v, ...data, updated: new Date().toISOString() } : v));
     } else {
@@ -309,9 +380,32 @@ ${answers}
 
 Analyst notes / evidence (e.g. SOC 2 summary, questionnaire excerpts):
 ${v.notes || "(none)"}
+${intakeContext()}
 
 Give the residual risk tier you judge appropriate, a recommendation, a 2-4 sentence summary, strengths, prioritised control gaps with remediation,
 contract clauses we should require, and follow-up due-diligence questions to send the vendor. Treat unanswered questions as unknown, not as compliant.`;
+  }
+
+  // The vendor's self-assessment intake response, if one has been imported.
+  function intakeContext() {
+    if (!pendingIntake) return "\nVendor intake questionnaire: not yet received.";
+    const p = pendingIntake.profile;
+    const s = summarizeIntake(pendingIntake);
+    const lines = INTAKE_QUESTIONS.map((q) => {
+      const r = pendingIntake.answers[q.id];
+      const tag = q.type === "inverse" ? " (Yes is a red flag)" : q.type === "info" ? " (context only)" : "";
+      return `- ${q.id} [${q.domain}] ${q.text}${tag}: ${r?.answer || "Not answered"}${r?.comment ? ` – vendor comment: ${r.comment}` : ""}`;
+    }).join("\n");
+    return `
+Vendor intake questionnaire (self-assessment completed by the vendor${pendingIntake.attested ? ", attested as accurate" : ", NOT attested"}):
+Company: ${p.legalName}; HQ: ${p.country}; employees: ${p.employees || "?"}; hosting: ${p.hosting || "?"}; data locations: ${p.dataLocations || "?"}
+Service: ${p.serviceDescription || "?"}
+Data types: ${(p.dataTypes || []).join(", ") || "?"}; record volume: ${p.recordVolume || "?"}; access requested: ${p.access || "?"}
+Certifications: ${(p.certifications || []).join(", ") || "none"}${p.certificationDetails ? ` (${p.certificationDetails})` : ""}
+Subprocessors: ${p.subprocessors || "none listed"}
+Intake score: ${s.score ?? "n/a"}% of scored answers favourable.
+${lines}
+Remember these are self-attested; weigh them against independent evidence such as audit reports.`;
   }
 
   function showAssessment(a) {
@@ -357,6 +451,7 @@ contract clauses we should require, and follow-up due-diligence questions to sen
       residualTier: residualTier(v), nextReview: nextReview(v), overdue: isOverdue(v),
       gaps: QUESTIONS.filter((q) => v.answers?.[q.id] === "No").map((q) => q.text),
       aiRecommendation: v.aiAssessment?.recommendation,
+      intakeScore: v.intake ? summarizeIntake(v.intake).score : null,
     })),
   };
 }

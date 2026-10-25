@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Vendor Security Intake Questionnaire</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="intake">
+  <header class="topbar">
+    <div class="brand">🛡️ <strong>Vendor security intake questionnaire</strong></div>
+    <div class="progress-wrap" title="Questions answered">
+      <div class="progress"><div id="progress-bar"></div></div>
+      <span id="progress-text" class="small muted"></span>
+    </div>
+  </header>
+
+  <main class="intake-main">
+    <div class="card intro">
+      <h1 id="intro-title">Security intake questionnaire</h1>
+      <p>Thank you for completing this questionnaire. It helps us understand how your organisation protects the data and services you provide to us. It takes about 30–45 minutes.</p>
+      <ul class="small">
+        <li>Answer every question <strong>Yes</strong>, <strong>No</strong> or <strong>N/A</strong>. Use the comment box to add context, compensating controls or planned remediation dates – a “No” with a good explanation is better than an inaccurate “Yes”.</li>
+        <li>Your answers are saved automatically in this browser as you go, so you can come back later on the same device.</li>
+        <li>When you're done, click <strong>Download response</strong> and email the file to your contact, together with any evidence (e.g. SOC 2 report, ISO certificate, penetration test summary). You can also print or save a PDF copy.</li>
+      </ul>
+      <p id="ref-line" class="small muted"></p>
+    </div>
+
+    <form id="intake-form" novalidate>
+      <section class="card">
+        <h2>1. Company profile</h2>
+        <div class="form-grid">
+          <label>Legal company name * <input name="legalName" required /></label>
+          <label>Website <input name="website" type="url" placeholder="https://" /></label>
+          <label>Headquarters country * <input name="country" required /></label>
+          <label>Number of employees
+            <select name="employees"><option value="">–</option><option>1–50</option><option>51–250</option><option>251–1,000</option><option>1,001–5,000</option><option>5,000+</option></select>
+          </label>
+          <label>Your name * <input name="contactName" required /></label>
+          <label>Your title <input name="contactTitle" /></label>
+          <label>Your email * <input name="contactEmail" type="email" required /></label>
+          <label>Security contact email <input name="securityEmail" type="email" placeholder="e.g. security@…" /></label>
+          <label class="full">Describe the products or services you will provide to us * <textarea name="serviceDescription" rows="3" required></textarea></label>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>2. Data and hosting</h2>
+        <fieldset class="checks">
+          <legend>Which of our data types will you store, process or have access to?</legend>
+          <label><input type="checkbox" name="dataTypes" value="Personal data (PII)" /> Personal data (PII)</label>
+          <label><input type="checkbox" name="dataTypes" value="Health data (PHI)" /> Health data (PHI)</label>
+          <label><input type="checkbox" name="dataTypes" value="Payment card data" /> Payment card data</label>
+          <label><input type="checkbox" name="dataTypes" value="Financial data" /> Financial data</label>
+          <label><input type="checkbox" name="dataTypes" value="Employee data" /> Employee data</label>
+          <label><input type="checkbox" name="dataTypes" value="Credentials / secrets" /> Credentials / secrets</label>
+          <label><input type="checkbox" name="dataTypes" value="Confidential business data / IP" /> Confidential business data / IP</label>
+          <label><input type="checkbox" name="dataTypes" value="None" /> None</label>
+        </fieldset>
+        <div class="form-grid">
+          <label>Access you need to our environment
+            <select name="access"><option value="">–</option><option>None</option><option>Read-only / API</option><option>Network access</option><option>Privileged / admin</option></select>
+          </label>
+          <label>Approximate number of our records you will hold
+            <select name="recordVolume"><option value="">–</option><option>None</option><option>Under 1,000</option><option>1,000–100,000</option><option>100,000–1 million</option><option>Over 1 million</option></select>
+          </label>
+          <label class="full">Hosting <input name="hosting" placeholder="e.g. AWS eu-west-1, own data centre in Frankfurt" /></label>
+          <label class="full">Countries where our data will be stored or processed <input name="dataLocations" /></label>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>3. Certifications</h2>
+        <fieldset class="checks">
+          <legend>Which current certifications or attestations cover the services in scope?</legend>
+          <label><input type="checkbox" name="certifications" value="SOC 2 Type II" /> SOC 2 Type II</label>
+          <label><input type="checkbox" name="certifications" value="SOC 2 Type I" /> SOC 2 Type I</label>
+          <label><input type="checkbox" name="certifications" value="ISO/IEC 27001" /> ISO/IEC 27001</label>
+          <label><input type="checkbox" name="certifications" value="ISO/IEC 27701" /> ISO/IEC 27701</label>
+          <label><input type="checkbox" name="certifications" value="PCI DSS" /> PCI DSS</label>
+          <label><input type="checkbox" name="certifications" value="HITRUST" /> HITRUST</label>
+          <label><input type="checkbox" name="certifications" value="FedRAMP / StateRAMP" /> FedRAMP / StateRAMP</label>
+          <label><input type="checkbox" name="certifications" value="Cyber Essentials Plus" /> Cyber Essentials Plus</label>
+          <label><input type="checkbox" name="certifications" value="None" /> None</label>
+        </fieldset>
+        <label>Certification details (scope, auditor, report period or expiry dates) <textarea name="certificationDetails" rows="2"></textarea></label>
+        <label>Subprocessors that will access our data (name, service, country) <textarea name="subprocessors" rows="3"></textarea></label>
+      </section>
+
+      <h2 class="section-title">4. Security controls</h2>
+      <div id="domains"></div>
+
+      <section class="card">
+        <h2>5. Attestation</h2>
+        <label class="inline"><input type="checkbox" name="attested" /> I confirm that the answers in this questionnaire are accurate and complete to the best of my knowledge.</label>
+      </section>
+    </form>
+
+    <div class="intake-actions card">
+      <button id="btn-download" class="primary">Download response</button>
+      <button id="btn-print">Print / save as PDF</button>
+      <div class="spacer"></div>
+      <span id="save-state" class="small muted"></span>
+      <button id="btn-clear-intake" class="danger">Clear answers</button>
+    </div>
+    <p id="validation" class="error-text"></p>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+  <script type="module" src="intake.js"></script>
+</body>
+</html>
