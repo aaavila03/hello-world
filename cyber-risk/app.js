@@ -18,7 +18,7 @@ function safeSet(storage, key, value) {
 }
 
 let risks = loadRisks();
-let settings = { model: "claude-opus-5-5", effort: "medium", remember: false, intakeCode: "",
+let settings = { model: "claude-opus-5-5", effort: "medium", remember: false,
   ...JSON.parse(safeGet(localStorage, SETTINGS_KEY) || "{}") };
 let apiKey = safeGet(localStorage, API_KEY_KEY) || safeGet(sessionStorage, API_KEY_KEY) || "";
 
@@ -408,11 +408,10 @@ function loadSettingsForm() {
   $("#remember-key").checked = settings.remember;
   $("#model").value = settings.model;
   $("#effort").value = settings.effort;
-  $("#intake-code").value = settings.intakeCode;
 }
 $("#btn-save-settings").addEventListener("click", () => {
   apiKey = $("#api-key").value.trim();
-  settings = { model: $("#model").value, effort: $("#effort").value, remember: $("#remember-key").checked, intakeCode: $("#intake-code").value.trim() };
+  settings = { model: $("#model").value, effort: $("#effort").value, remember: $("#remember-key").checked };
   safeSet(localStorage, SETTINGS_KEY, JSON.stringify(settings));
   safeSet(localStorage, API_KEY_KEY, settings.remember && apiKey ? apiKey : null);
   safeSet(sessionStorage, API_KEY_KEY, apiKey || null);
@@ -481,7 +480,6 @@ function addRegisterRisk(risk) {
 
 const vendorsApi = initVendors({
   $, $$, escapeHtml, toast, download, safeGet, safeSet, getAI, addRegisterRisk,
-  getIntakeCode: () => settings.intakeCode,
   onChange: renderDashboard,
 });
 

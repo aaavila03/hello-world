@@ -1,7 +1,7 @@
 // Vendor-facing intake questionnaire. Runs standalone: answers autosave to this
 // browser and are handed back to the requester as a downloaded JSON file.
 import { INTAKE_DOMAINS, INTAKE_QUESTIONS, INTAKE_FORMAT, INTAKE_VERSION } from "./intake-questions.js";
-import { AUTOFILL_ENDPOINT } from "./config.js";
+import { addDocuments } from "./autofill.js";
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -11,7 +11,6 @@ const params = new URLSearchParams(location.search);
 const vendorName = params.get("v") || "";
 const vendorRef = params.get("ref") || "";
 const requester = params.get("org") || "";
-const accessCode = params.get("code") || "";
 const DRAFT_KEY = `riskpilot.intake.${vendorRef || vendorName || "draft"}`;
 
 const form = $("#intake-form");
@@ -27,8 +26,7 @@ $("#domains").innerHTML = INTAKE_DOMAINS.map((d, i) => `
     <summary><span>${escapeHtml(d.title)}</span><span class="domain-count small muted" data-count="${d.id}"></span></summary>
     ${d.questions.map((q) => `
       <div class="iq" data-q="${q.id}">
-        <div class="iq-text"><span class="iq-id">${q.id}</span> ${escapeHtml(q.text)}<span class="iq-badge" data-badge="${q.id}"></span></div>
-        <div class="iq-evidence hidden" data-evidence="${q.id}"></div>
+        <div class="iq-text"><span class="iq-id">${q.id}</span> ${escapeHtml(q.text)}</div>
         <div class="iq-answers" role="radiogroup" aria-label="${q.id}">
           ${["Yes", "No", "N/A"].map((a) => `<label><input type="radio" name="${q.id}" value="${a}" /> ${a}</label>`).join("")}
         </div>
@@ -37,9 +35,6 @@ $("#domains").innerHTML = INTAKE_DOMAINS.map((d, i) => `
   </details>`).join("");
 
 // ---------- state ----------
-// AI suggestions per question: { answer, comment, evidence, document, reviewed }.
-let aiMeta = {};
-let aiRun = null;
 const PROFILE_FIELDS = ["legalName", "website", "country", "employees", "contactName", "contactTitle", "contactEmail",
   "securityEmail", "serviceDescription", "access", "recordVolume", "hosting", "dataLocations", "certificationDetails", "subprocessors"];
 
@@ -52,21 +47,13 @@ function collect() {
   for (const q of INTAKE_QUESTIONS) {
     const answer = form.querySelector(`input[name="${q.id}"]:checked`)?.value || "";
     const comment = form.elements[`${q.id}_comment`].value.trim();
-    const m = aiMeta[q.id];
-    if (answer || comment) {
-      answers[q.id] = { answer, comment };
-      if (m && m.answer !== "Unknown") {
-        answers[q.id].source = answer === m.answer ? (m.reviewed ? "ai-reviewed" : "ai") : "vendor";
-        if (m.evidence) Object.assign(answers[q.id], { evidence: m.evidence, document: m.document });
-      }
-    }
+    if (answer || comment) answers[q.id] = { answer, comment };
   }
   return {
     format: INTAKE_FORMAT, version: INTAKE_VERSION,
     vendorRef, vendorName, requester,
     profile, answers,
     attested: form.elements.attested.checked,
-    ...(aiRun ? { aiAutofill: aiRun, aiMeta } : {}),
   };
 }
 
@@ -81,41 +68,7 @@ function restore(data) {
     if (form.elements[`${id}_comment`]) form.elements[`${id}_comment`].value = r.comment || "";
   }
   form.elements.attested.checked = !!data.attested;
-  aiMeta = data.aiMeta || {};
-  aiRun = data.aiAutofill || null;
 }
-
-function renderAiMarks() {
-  for (const q of INTAKE_QUESTIONS) {
-    const m = aiMeta[q.id];
-    const badge = $(`[data-badge="${q.id}"]`);
-    const ev = $(`[data-evidence="${q.id}"]`);
-    const row = $(`[data-q="${q.id}"]`);
-    if (!m) { badge.innerHTML = ""; ev.classList.add("hidden"); row.classList.remove("ai-pending"); continue; }
-    const current = form.querySelector(`input[name="${q.id}"]:checked`)?.value || "";
-    let label = "";
-    if (m.answer === "Unknown") label = current ? "" : '<span class="ai-badge unknown">Not found in documents</span>';
-    else if (current === m.answer) label = m.reviewed ? '<span class="ai-badge reviewed">AI-drafted · reviewed</span>' : '<span class="ai-badge">AI-drafted · please review</span>';
-    else if (current) label = `<span class="ai-badge unknown">AI suggested: ${escapeHtml(m.answer)}</span>`;
-    badge.innerHTML = label;
-    row.classList.toggle("ai-pending", m.answer !== "Unknown" && current === m.answer && !m.reviewed);
-    if (m.evidence) {
-      ev.textContent = `“${m.evidence}”${m.document ? ` — ${m.document}` : ""}`;
-      ev.classList.remove("hidden");
-    } else ev.classList.add("hidden");
-  }
-}
-
-const pendingReview = () => INTAKE_QUESTIONS.filter((q) => {
-  const m = aiMeta[q.id];
-  return m && m.answer !== "Unknown" && !m.reviewed && form.querySelector(`input[name="${q.id}"]:checked`)?.value === m.answer;
-});
-
-// Clicking an answer (even the drafted one) counts as the vendor reviewing it.
-form.addEventListener("click", (e) => {
-  const radio = e.target.closest('.iq-answers input[type="radio"]');
-  if (radio && aiMeta[radio.name]) { aiMeta[radio.name].reviewed = true; autosave(); }
-});
 
 function updateProgress() {
   const data = collect();
@@ -130,9 +83,6 @@ function updateProgress() {
     el.classList.toggle("done", n === d.questions.length);
   }
   // Highlight a "No" or a red-flag "Yes" so the vendor knows a comment is expected.
-  renderAiMarks();
-  const pending = pendingReview().length;
-  $("#progress-text").textContent += pending ? ` · ${pending} AI answers to review` : "";
   for (const q of INTAKE_QUESTIONS) {
     const a = data.answers[q.id]?.answer;
     const flagged = q.type === "inverse" ? a === "Yes" : q.type !== "info" && a === "No";
@@ -178,21 +128,21 @@ function problems(data) {
     if (!data.profile[f]) out.push(form.elements[f].closest("label").firstChild.textContent.replace("*", "").trim());
   }
   if (data.profile.contactEmail && !form.elements.contactEmail.checkValidity()) out.push("A valid contact email");
+  // With documentation attached, the requester completes unanswered questions from it.
   const unanswered = INTAKE_QUESTIONS.filter((q) => !data.answers[q.id]?.answer);
-  if (unanswered.length) out.push(`${unanswered.length} unanswered control question(s) (first: ${unanswered[0].id})`);
-  const pending = pendingReview();
-  if (pending.length) out.push(`${pending.length} AI-drafted answer(s) not yet reviewed – click the answer to confirm it (first: ${pending[0].id})`);
+  if (unanswered.length && !docs.length) out.push(`${unanswered.length} unanswered control question(s) (first: ${unanswered[0].id}) – answer them or attach documentation that covers them`);
   if (!data.attested) out.push("The attestation in section 5");
   return out;
 }
 
 $("#btn-download").addEventListener("click", () => {
   const data = collect();
+  data.documents = docs;
   const missing = problems(data);
   $("#validation").textContent = "";
   if (missing.length) {
     $("#validation").textContent = `Still needed: ${missing.join("; ")}.`;
-    const first = INTAKE_QUESTIONS.find((q) => !data.answers[q.id]?.answer) || pendingReview()[0];
+    const first = INTAKE_QUESTIONS.find((q) => !data.answers[q.id]?.answer);
     if (first) $(`[data-q="${first.id}"]`).closest("details").open = true;
     if (!confirm(`Your response is incomplete:\n\n• ${missing.join("\n• ")}\n\nDownload it anyway?`)) return;
   }
@@ -202,7 +152,9 @@ $("#btn-download").addEventListener("click", () => {
   const a = Object.assign(document.createElement("a"), { href: url, download: `security-intake-${safeName}.json` });
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-  toast("Response downloaded – email it to your contact with your evidence files");
+  toast(docs.length
+    ? `Response downloaded with ${docs.length} attached document(s) – email the file to your contact`
+    : "Response downloaded – email it to your contact with any evidence files");
 });
 
 $("#btn-print").addEventListener("click", () => {
@@ -214,113 +166,31 @@ $("#btn-clear-intake").addEventListener("click", () => {
   if (!confirm("Clear all answers on this device?")) return;
   try { localStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ }
   form.reset();
-  aiMeta = {};
-  aiRun = null;
   if (vendorName) form.elements.legalName.value = vendorName;
   updateProgress();
   $("#save-state").textContent = "";
 });
 
-// ---------- AI auto-fill from documents ----------
-const MAX_FILES = 5;
-const MAX_BYTES = 20 * 1024 * 1024;
-const TYPES = { pdf: "application/pdf", txt: "text/plain", md: "text/markdown", csv: "text/csv" };
-let docs = [];
-
-function mediaType(file) {
-  const ext = file.name.split(".").pop().toLowerCase();
-  return TYPES[ext] || (Object.values(TYPES).includes(file.type) ? file.type : null);
-}
+// ---------- supporting documentation ----------
+const docs = [];
 
 function renderDocs() {
-  $("#doc-list").innerHTML = docs.map((f, i) => `<li><span>📄 ${escapeHtml(f.name)}</span><span class="small muted">${(f.size / 1024 / 1024).toFixed(1)} MB</span>
+  $("#doc-list").innerHTML = docs.map((d, i) => `<li><span>📄 ${escapeHtml(d.name)}</span><span class="small muted">${(d.size / 1024 / 1024).toFixed(1)} MB</span>
     <button type="button" class="small" data-remove="${i}">Remove</button></li>`).join("");
-  $("#btn-autofill").disabled = !docs.length;
 }
 
-function addFiles(list) {
-  for (const f of list) {
-    if (!mediaType(f)) { toast(`${f.name}: use PDF, TXT, Markdown or CSV (save Word files as PDF)`, true); continue; }
-    if (docs.length >= MAX_FILES) { toast(`You can attach up to ${MAX_FILES} documents`, true); break; }
-    if (docs.reduce((n, d) => n + d.size, 0) + f.size > MAX_BYTES) { toast("Documents can total at most 20 MB", true); break; }
-    if (!docs.some((d) => d.name === f.name && d.size === f.size)) docs.push(f);
-  }
+async function attach(files) {
+  const errors = await addDocuments(docs, files);
+  if (errors.length) toast(errors[0], true);
   renderDocs();
 }
 
-const toBase64 = (file) => new Promise((resolve, reject) => {
-  const r = new FileReader();
-  r.onload = () => resolve(String(r.result).split(",")[1]);
-  r.onerror = () => reject(new Error(`Could not read ${file.name}`));
-  r.readAsDataURL(file);
+const drop = $("#drop");
+$("#doc-input").addEventListener("change", (e) => { attach([...e.target.files]); e.target.value = ""; });
+drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); attach([...e.dataTransfer.files]); });
+$("#doc-list").addEventListener("click", (e) => {
+  const i = e.target.dataset.remove;
+  if (i != null) { docs.splice(Number(i), 1); renderDocs(); }
 });
-
-function applyAutofill(result) {
-  const now = new Date().toISOString();
-  let filled = 0, kept = 0, unknown = 0;
-  for (const a of result.answers || []) {
-    if (!INTAKE_QUESTIONS.some((q) => q.id === a.id)) continue;
-    const current = form.querySelector(`input[name="${a.id}"]:checked`)?.value;
-    aiMeta[a.id] = { answer: a.answer, comment: a.comment, evidence: a.evidence, document: a.document, reviewed: false };
-    if (a.answer === "Unknown") { unknown++; continue; }
-    if (current) { kept++; continue; }
-    form.querySelector(`input[name="${a.id}"][value="${a.answer}"]`).checked = true;
-    const c = form.elements[`${a.id}_comment`];
-    if (!c.value && a.comment) c.value = a.comment;
-    filled++;
-  }
-  const p = result.profile || {};
-  for (const f of ["certificationDetails", "hosting", "dataLocations", "subprocessors"]) {
-    if (p[f] && !form.elements[f].value) form.elements[f].value = p[f];
-  }
-  for (const c of $$('input[name="certifications"]')) if ((p.certifications || []).includes(c.value)) c.checked = true;
-  aiRun = { at: now, documents: docs.map((d) => ({ name: d.name, size: d.size })), summary: result.summary || "" };
-  return { filled, kept, unknown };
-}
-
-if (AUTOFILL_ENDPOINT) {
-  $("#autofill-card").classList.remove("hidden");
-  const drop = $("#drop");
-  $("#doc-input").addEventListener("change", (e) => { addFiles(e.target.files); e.target.value = ""; });
-  drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
-  drop.addEventListener("dragleave", () => drop.classList.remove("over"));
-  drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); addFiles(e.dataTransfer.files); });
-  $("#doc-list").addEventListener("click", (e) => {
-    const i = e.target.dataset.remove;
-    if (i != null) { docs.splice(Number(i), 1); renderDocs(); }
-  });
-
-  $("#btn-autofill").addEventListener("click", async () => {
-    const status = $("#autofill-status");
-    const btn = $("#btn-autofill");
-    btn.disabled = true;
-    status.classList.remove("hidden");
-    status.innerHTML = `<div class="spinner"></div> Reading ${docs.length} document(s) and drafting answers. This usually takes 1–3 minutes – please keep this page open.`;
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 6 * 60 * 1000);
-    try {
-      const documents = await Promise.all(docs.map(async (f) => ({ name: f.name, mediaType: mediaType(f), data: await toBase64(f) })));
-      const res = await fetch(`${AUTOFILL_ENDPOINT.replace(/\/$/, "")}/autofill`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ documents, accessCode, vendorName: vendorName || form.elements.legalName.value }),
-        signal: controller.signal,
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || `The auto-fill service returned an error (${res.status}).`);
-      const { filled, kept, unknown } = applyAutofill(data);
-      $$("details.domain").forEach((d) => { d.open = true; });
-      autosave();
-      status.innerHTML = `<strong>Drafted ${filled} answer(s) from your documents.</strong>
-        ${kept ? `${kept} question(s) you had already answered were left unchanged. ` : ""}
-        ${unknown ? `${unknown} question(s) weren't covered by the documents and are marked “Not found in documents” – please answer them yourself. ` : ""}
-        <br>Answers marked <span class="ai-badge">AI-drafted · please review</span> show the supporting quote underneath. Click the correct answer on each one to confirm it before downloading.
-        ${data.summary ? `<p class="small muted">${escapeHtml(data.summary)}</p>` : ""}`;
-    } catch (err) {
-      status.innerHTML = `<p class="error-text">${escapeHtml(err.name === "AbortError" ? "The request took too long. Try fewer or smaller documents." : err.message)}</p>`;
-    } finally {
-      clearTimeout(timer);
-      btn.disabled = !docs.length;
-    }
-  });
-}
