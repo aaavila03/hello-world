@@ -106,7 +106,7 @@ export function isOverdue(v) {
 const tierClass = (t) => ({ Low: "low", Medium: "medium", High: "high", Critical: "critical" }[t]);
 
 // ---------- module ----------
-export function initVendors({ $, $$, escapeHtml, toast, download, safeGet, safeSet, getAI, addRegisterRisk, onChange }) {
+export function initVendors({ $, $$, escapeHtml, toast, download, safeGet, safeSet, getAI, getIntakeCode, addRegisterRisk, onChange }) {
   let vendors = [];
   try { vendors = JSON.parse(safeGet(localStorage, VENDOR_STORE_KEY) || "[]"); } catch { vendors = []; }
   let sortKey = "residual", sortDir = -1;
@@ -244,7 +244,18 @@ export function initVendors({ $, $$, escapeHtml, toast, download, safeGet, safeS
         ${pendingIntake.attested ? "" : ' <span class="tag p-high">not attested</span>'}</div>
       <div>Intake score <strong>${s.score ?? "–"}%</strong> · ${s.counts.Yes} Yes · ${s.counts.No} No · ${s.counts["N/A"]} N/A · ${s.counts.unanswered} unanswered</div>
       <div class="small">Certifications: ${escapeHtml(p.certifications?.join(", ") || "none listed")}${p.dataLocations ? ` · Data locations: ${escapeHtml(p.dataLocations)}` : ""}</div>
+      ${aiDraftLine()}
       ${s.flags.length ? `<details><summary>${s.flags.length} answer(s) needing attention</summary><ul>${flagList}</ul></details>` : ""}`;
+  }
+
+  function aiDraftLine() {
+    if (!pendingIntake.aiAutofill) return "";
+    const srcs = Object.values(pendingIntake.answers).map((r) => r.source);
+    const ai = srcs.filter((x) => x === "ai" || x === "ai-reviewed").length;
+    const changed = srcs.filter((x) => x === "vendor").length;
+    const unreviewed = srcs.filter((x) => x === "ai").length;
+    const docsList = pendingIntake.aiAutofill.documents.map((d) => d.name).join(", ");
+    return `<div class="small">✨ ${ai} answer(s) drafted by AI from the vendor's documents (${escapeHtml(docsList)})${changed ? `, ${changed} changed by the vendor` : ""}${unreviewed ? ` · <span class="error-text">${unreviewed} not confirmed by the vendor</span>` : ""}</div>`;
   }
 
   $("#btn-intake-link").addEventListener("click", async () => {
@@ -253,6 +264,8 @@ export function initVendors({ $, $$, escapeHtml, toast, download, safeGet, safeS
     const url = new URL("intake.html", location.href);
     url.searchParams.set("v", name);
     if (editingId) url.searchParams.set("ref", editingId);
+    const code = getIntakeCode();
+    if (code) url.searchParams.set("code", code);
     try {
       await navigator.clipboard.writeText(url.href);
       toast("Intake link copied – send it to the vendor");
@@ -394,7 +407,9 @@ contract clauses we should require, and follow-up due-diligence questions to sen
     const lines = INTAKE_QUESTIONS.map((q) => {
       const r = pendingIntake.answers[q.id];
       const tag = q.type === "inverse" ? " (Yes is a red flag)" : q.type === "info" ? " (context only)" : "";
-      return `- ${q.id} [${q.domain}] ${q.text}${tag}: ${r?.answer || "Not answered"}${r?.comment ? ` – vendor comment: ${r.comment}` : ""}`;
+      const src = r?.source === "ai" ? " [AI-drafted from vendor documents, not confirmed by vendor]"
+        : r?.source === "ai-reviewed" ? " [AI-drafted from vendor documents, confirmed by vendor]" : "";
+      return `- ${q.id} [${q.domain}] ${q.text}${tag}: ${r?.answer || "Not answered"}${src}${r?.comment ? ` – vendor comment: ${r.comment}` : ""}${r?.evidence ? ` – evidence quoted from ${r.document || "documents"}: "${r.evidence}"` : ""}`;
     }).join("\n");
     return `
 Vendor intake questionnaire (self-assessment completed by the vendor${pendingIntake.attested ? ", attested as accurate" : ", NOT attested"}):
@@ -405,7 +420,7 @@ Certifications: ${(p.certifications || []).join(", ") || "none"}${p.certificatio
 Subprocessors: ${p.subprocessors || "none listed"}
 Intake score: ${s.score ?? "n/a"}% of scored answers favourable.
 ${lines}
-Remember these are self-attested; weigh them against independent evidence such as audit reports.`;
+${pendingIntake.aiAutofill ? `Documents the vendor supplied for auto-fill: ${pendingIntake.aiAutofill.documents.map((d) => d.name).join(", ")}. Auto-fill summary: ${pendingIntake.aiAutofill.summary}\n` : ""}Remember these are self-attested; weigh them against independent evidence such as audit reports.`;
   }
 
   function showAssessment(a) {

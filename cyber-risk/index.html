@@ -148,6 +148,10 @@
             <option value="high">High (most thorough)</option>
           </select>
         </label>
+        <label>Intake auto-fill access code
+          <input id="intake-code" type="text" autocomplete="off" placeholder="Only if your intake worker has an ACCESS_CODE" />
+        </label>
+        <p class="muted small">Added to vendor questionnaire links so vendors can use “Auto-fill from my documents”. It must match the ACCESS_CODE secret on your intake worker.</p>
         <button id="btn-save-settings" class="primary">Save settings</button>
         <span id="settings-saved" class="muted hidden">Saved ✓</span>
 

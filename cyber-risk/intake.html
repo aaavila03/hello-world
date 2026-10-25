@@ -27,6 +27,19 @@
       <p id="ref-line" class="small muted"></p>
     </div>
 
+    <section id="autofill-card" class="card autofill hidden">
+      <h2>Optional: auto-fill from your documentation</h2>
+      <p>Save time by uploading documents that describe your security program, such as a SOC 2 report, ISO 27001 statement of applicability, security whitepaper, policies or a previously completed questionnaire. AI will draft answers to the questions below, each with a supporting quote. <strong>You must review every drafted answer before submitting</strong>, and anything your documents don't cover is left for you to answer.</p>
+      <div class="drop" id="drop">
+        <input id="doc-input" type="file" multiple accept=".pdf,.txt,.md,.csv,application/pdf,text/plain,text/markdown,text/csv" />
+        <p class="small muted">PDF, TXT, Markdown or CSV · up to 5 files, 20 MB in total · save Word documents as PDF first.</p>
+      </div>
+      <ul id="doc-list" class="doc-list"></ul>
+      <button type="button" id="btn-autofill" class="primary" disabled>✨ Auto-fill from my documents</button>
+      <p class="small muted">Documents are sent securely to our AI provider (Anthropic) only to draft your answers. They are not stored by this form and are not used to train AI models. Please still email your evidence to your contact.</p>
+      <div id="autofill-status" class="ai-panel hidden"></div>
+    </section>
+
     <form id="intake-form" novalidate>
       <section class="card">
         <h2>1. Company profile</h2>
