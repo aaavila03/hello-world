@@ -227,8 +227,11 @@
       <div class="intake-tools">
         <button type="button" id="btn-intake-link">Copy link for vendor</button>
         <label class="button">Import response<input id="intake-file" type="file" accept="application/json,.json" hidden /></label>
+        <label class="button" title="Add documentation the vendor sent you separately">Add documents<input id="intake-docs" type="file" multiple accept=".pdf,.txt,.md,.csv,application/pdf,text/plain,text/markdown,text/csv" hidden /></label>
+        <button type="button" id="btn-intake-fill" class="hidden">✨ Fill from documents</button>
         <a href="intake.html" target="_blank" rel="noopener" class="small">Preview form ↗</a>
       </div>
+      <ul id="intake-doc-list" class="doc-list"></ul>
       <div id="vendor-intake" class="intake-box"></div>
       <h3>Security questionnaire</h3>
       <p class="muted small">Importing an intake response fills these in automatically. You can still adjust them.</p>

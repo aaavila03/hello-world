@@ -76,6 +76,22 @@ export class RiskAI {
     return JSON.parse(text);
   }
 
+  // Long-input structured task over attached documents, with its own system prompt.
+  // Streams so large documents and long answers don't hit request timeouts.
+  async documentTask({ system, content, schema }) {
+    const stream = this.client.beta.messages.stream({
+      ...this.baseParams(),
+      system,
+      max_tokens: 64000,
+      output_config: { effort: this.effort, format: { type: "json_schema", schema } },
+      messages: [{ role: "user", content }],
+    });
+    const response = await stream.finalMessage();
+    checkRefusal(response);
+    const text = response.content.filter((b) => b.type === "text").map((b) => b.text).join("");
+    return JSON.parse(text);
+  }
+
   assessRisk(risk) {
     return this.structured(`Assess this cyber risk for our organisation.
 

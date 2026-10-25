@@ -1,6 +1,7 @@
 // Vendor-facing intake questionnaire. Runs standalone: answers autosave to this
 // browser and are handed back to the requester as a downloaded JSON file.
 import { INTAKE_DOMAINS, INTAKE_QUESTIONS, INTAKE_FORMAT, INTAKE_VERSION } from "./intake-questions.js";
+import { addDocuments } from "./autofill.js";
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -127,14 +128,16 @@ function problems(data) {
     if (!data.profile[f]) out.push(form.elements[f].closest("label").firstChild.textContent.replace("*", "").trim());
   }
   if (data.profile.contactEmail && !form.elements.contactEmail.checkValidity()) out.push("A valid contact email");
+  // With documentation attached, the requester completes unanswered questions from it.
   const unanswered = INTAKE_QUESTIONS.filter((q) => !data.answers[q.id]?.answer);
-  if (unanswered.length) out.push(`${unanswered.length} unanswered control question(s) (first: ${unanswered[0].id})`);
+  if (unanswered.length && !docs.length) out.push(`${unanswered.length} unanswered control question(s) (first: ${unanswered[0].id}) – answer them or attach documentation that covers them`);
   if (!data.attested) out.push("The attestation in section 5");
   return out;
 }
 
 $("#btn-download").addEventListener("click", () => {
   const data = collect();
+  data.documents = docs;
   const missing = problems(data);
   $("#validation").textContent = "";
   if (missing.length) {
@@ -149,7 +152,9 @@ $("#btn-download").addEventListener("click", () => {
   const a = Object.assign(document.createElement("a"), { href: url, download: `security-intake-${safeName}.json` });
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-  toast("Response downloaded – email it to your contact with your evidence files");
+  toast(docs.length
+    ? `Response downloaded with ${docs.length} attached document(s) – email the file to your contact`
+    : "Response downloaded – email it to your contact with any evidence files");
 });
 
 $("#btn-print").addEventListener("click", () => {
@@ -164,4 +169,28 @@ $("#btn-clear-intake").addEventListener("click", () => {
   if (vendorName) form.elements.legalName.value = vendorName;
   updateProgress();
   $("#save-state").textContent = "";
+});
+
+// ---------- supporting documentation ----------
+const docs = [];
+
+function renderDocs() {
+  $("#doc-list").innerHTML = docs.map((d, i) => `<li><span>📄 ${escapeHtml(d.name)}</span><span class="small muted">${(d.size / 1024 / 1024).toFixed(1)} MB</span>
+    <button type="button" class="small" data-remove="${i}">Remove</button></li>`).join("");
+}
+
+async function attach(files) {
+  const errors = await addDocuments(docs, files);
+  if (errors.length) toast(errors[0], true);
+  renderDocs();
+}
+
+const drop = $("#drop");
+$("#doc-input").addEventListener("change", (e) => { attach([...e.target.files]); e.target.value = ""; });
+drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); attach([...e.dataTransfer.files]); });
+$("#doc-list").addEventListener("click", (e) => {
+  const i = e.target.dataset.remove;
+  if (i != null) { docs.splice(Number(i), 1); renderDocs(); }
 });

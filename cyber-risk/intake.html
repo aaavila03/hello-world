@@ -22,10 +22,22 @@
       <ul class="small">
         <li>Answer every question <strong>Yes</strong>, <strong>No</strong> or <strong>N/A</strong>. Use the comment box to add context, compensating controls or planned remediation dates – a “No” with a good explanation is better than an inaccurate “Yes”.</li>
         <li>Your answers are saved automatically in this browser as you go, so you can come back later on the same device.</li>
-        <li>When you're done, click <strong>Download response</strong> and email the file to your contact, together with any evidence (e.g. SOC 2 report, ISO certificate, penetration test summary). You can also print or save a PDF copy.</li>
+        <li>Have security documentation? <strong>Attach it below</strong> and you can skip questions it already covers – we'll complete those from your documents and contact you if anything is unclear.</li>
+        <li>When you're done, click <strong>Download response</strong> and email the file to your contact. Attached documents are included in the file. You can also print or save a PDF copy.</li>
       </ul>
       <p id="ref-line" class="small muted"></p>
     </div>
+
+    <section class="card attachments">
+      <h2>Supporting documentation (optional)</h2>
+      <p>Attach documents that describe your security program, for example a SOC 2 report, ISO 27001 certificate or statement of applicability, penetration test summary, security whitepaper, policies, or a questionnaire you've already completed for another customer.</p>
+      <div class="drop" id="drop">
+        <input id="doc-input" type="file" multiple accept=".pdf,.txt,.md,.csv,application/pdf,text/plain,text/markdown,text/csv" />
+        <p class="small muted">PDF, TXT, Markdown or CSV · up to 5 files, 20 MB in total · save Word documents as PDF first.</p>
+      </div>
+      <ul id="doc-list" class="doc-list"></ul>
+      <p class="small muted">Attachments are added to your response file when you download it. They are not saved with your draft, so re-attach them if you come back later. Your contact may use AI (Anthropic's Claude) to help review them.</p>
+    </section>
 
     <form id="intake-form" novalidate>
       <section class="card">

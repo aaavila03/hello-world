@@ -1,7 +1,8 @@
 // Vendor (third-party) risk assessment: inventory, security questionnaire,
 // tiering, review scheduling and Claude-powered due diligence.
 import { assessVendorOffline } from "./heuristics.js";
-import { INTAKE_QUESTIONS, summarizeIntake, deriveControlAnswers, validateIntake } from "./intake-questions.js";
+import { INTAKE_QUESTIONS, INTAKE_FORMAT, INTAKE_VERSION, summarizeIntake, deriveControlAnswers, validateIntake } from "./intake-questions.js";
+import { addDocuments, toDocumentBlocks, AUTOFILL_SCHEMA, AUTOFILL_SYSTEM, autofillPrompt } from "./autofill.js";
 
 export const VENDOR_STORE_KEY = "riskpilot.vendors";
 
@@ -212,6 +213,7 @@ export function initVendors({ $, $$, escapeHtml, toast, download, safeGet, safeS
     editingId = vendor?.id ?? null;
     pendingAssessment = vendor?.aiAssessment ?? null;
     pendingIntake = vendor?.intake ?? null;
+    intakeDocs = [];
     form.reset();
     $("#vendor-dialog-title").textContent = vendor ? `Edit ${vendor.id} · ${vendor.name}` : "New vendor";
     $("#btn-vendor-delete").classList.toggle("hidden", !vendor);
@@ -229,22 +231,152 @@ export function initVendors({ $, $$, escapeHtml, toast, download, safeGet, safeS
   }
 
   // ---------- intake questionnaire ----------
+  // Documents from the imported response or added by the analyst. Kept in memory
+  // only (they can be too large for browser storage); names are saved with the intake.
+  let intakeDocs = [];
+
   function renderIntake() {
+    renderIntakeDocs();
     const box = $("#vendor-intake");
     if (!pendingIntake) {
-      box.innerHTML = `<span class="muted">No response yet. Copy the link, send it to the vendor, then import the file they send back.</span>`;
+      box.innerHTML = `<span class="muted">No response yet. Copy the link, send it to the vendor, then import the file they send back. If they send documentation instead, use Add documents and Fill from documents.</span>`;
       return;
     }
     const s = summarizeIntake(pendingIntake);
     const p = pendingIntake.profile;
     const flagList = s.flags.map((f) => `<li><span class="iq-id">${escapeHtml(f.id)}</span> ${escapeHtml(f.text)} <strong>${escapeHtml(f.answer)}</strong>${f.comment ? ` – <em>${escapeHtml(f.comment)}</em>` : ""}</li>`).join("");
-    box.innerHTML = `
-      <div><strong>Response received</strong> ${pendingIntake.submittedAt ? escapeHtml(pendingIntake.submittedAt.slice(0, 10)) : ""}
+    const header = pendingIntake.analystCreated
+      ? `<div><strong>Completed from documents</strong> – no questionnaire response from the vendor</div>`
+      : `<div><strong>Response received</strong> ${pendingIntake.submittedAt ? escapeHtml(pendingIntake.submittedAt.slice(0, 10)) : ""}
         from ${escapeHtml(p.contactName || "unknown")}${p.contactEmail ? ` (${escapeHtml(p.contactEmail)})` : ""}
-        ${pendingIntake.attested ? "" : ' <span class="tag p-high">not attested</span>'}</div>
+        ${pendingIntake.attested ? "" : ' <span class="tag p-high">not attested</span>'}</div>`;
+    box.innerHTML = `
+      ${header}
       <div>Intake score <strong>${s.score ?? "–"}%</strong> · ${s.counts.Yes} Yes · ${s.counts.No} No · ${s.counts["N/A"]} N/A · ${s.counts.unanswered} unanswered</div>
       <div class="small">Certifications: ${escapeHtml(p.certifications?.join(", ") || "none listed")}${p.dataLocations ? ` · Data locations: ${escapeHtml(p.dataLocations)}` : ""}</div>
-      ${s.flags.length ? `<details><summary>${s.flags.length} answer(s) needing attention</summary><ul>${flagList}</ul></details>` : ""}`;
+      ${s.flags.length ? `<details><summary>${s.flags.length} answer(s) needing attention</summary><ul>${flagList}</ul></details>` : ""}
+      ${aiFillSection()}`;
+  }
+
+  function aiFillSection() {
+    const run = pendingIntake.aiFill;
+    if (!run) return "";
+    const entries = INTAKE_QUESTIONS.map((q) => [q, pendingIntake.answers[q.id]]).filter(([, r]) => r);
+    const filled = entries.filter(([, r]) => r.source === "ai" || r.source === "analyst");
+    const conflicts = entries.filter(([, r]) => r.aiSuggestion);
+    const evidence = (r) => r.evidence ? `<div class="iq-evidence">“${escapeHtml(r.evidence)}”${r.document ? ` — ${escapeHtml(r.document)}` : ""}</div>` : "";
+    const rows = filled.map(([q, r]) => `<li><span class="iq-id">${q.id}</span> ${escapeHtml(q.text)}
+      <select data-ai-answer="${q.id}">${["Yes", "No", "N/A"].map((a) => `<option ${a === r.answer ? "selected" : ""}>${a}</option>`).join("")}</select>
+      ${r.source === "analyst" ? '<span class="tag">changed by you</span>' : ""}${evidence(r)}</li>`).join("");
+    const conflictRows = conflicts.map(([q, r]) => `<li><span class="iq-id">${q.id}</span> ${escapeHtml(q.text)}
+      Vendor: <strong>${escapeHtml(r.answer)}</strong> · documents suggest: <strong>${escapeHtml(r.aiSuggestion.answer)}</strong>${evidence(r.aiSuggestion)}</li>`).join("");
+    return `
+      <div class="ai-fill-line">✨ Claude filled ${filled.length} answer(s) from ${run.documents.length} document(s) (${escapeHtml(run.documents.map((d) => d.name).join(", "))}) on ${escapeHtml(run.at.slice(0, 10))}.
+        ${conflicts.length ? `<span class="error-text">${conflicts.length} vendor answer(s) disagree with the documents.</span>` : ""}</div>
+      ${run.summary ? `<div class="small muted">${escapeHtml(run.summary)}</div>` : ""}
+      ${conflicts.length ? `<details open><summary>Vendor answers that disagree with the documents (${conflicts.length})</summary><ul>${conflictRows}</ul></details>` : ""}
+      ${filled.length ? `<details><summary>Review AI-filled answers (${filled.length})</summary><p class="small muted">Change any answer here; the security questionnaire below updates to match.</p><ul class="ai-review">${rows}</ul></details>` : ""}`;
+  }
+
+  // The analyst corrects an AI-filled answer.
+  $("#vendor-intake").addEventListener("change", (e) => {
+    const id = e.target.dataset.aiAnswer;
+    if (!id) return;
+    Object.assign(pendingIntake.answers[id], { answer: e.target.value, source: "analyst" });
+    applyDerivedControls();
+    renderIntake();
+    $("#vendor-intake details:last-of-type").open = true;
+  });
+
+  function applyDerivedControls() {
+    const derived = deriveControlAnswers(pendingIntake);
+    for (const [id, a] of Object.entries(derived)) if (form.elements[`q_${id}`]) form.elements[`q_${id}`].value = a;
+    updateLiveScore();
+    return derived;
+  }
+
+  function renderIntakeDocs() {
+    const saved = pendingIntake?.documents || [];
+    const missing = saved.filter((d) => !intakeDocs.some((x) => x.name === d.name));
+    $("#intake-doc-list").innerHTML = intakeDocs.map((d, i) => `<li><span>📄 ${escapeHtml(d.name)}</span>
+        <span class="small muted">${(d.size / 1024 / 1024).toFixed(1)} MB</span>
+        <button type="button" class="small" data-open-doc="${i}">Open</button>
+        <button type="button" class="small" data-remove-doc="${i}">Remove</button></li>`).join("")
+      + (missing.length ? `<li class="small muted">Not loaded: ${escapeHtml(missing.map((d) => d.name).join(", "))} – documents aren't kept in the browser, so re-import the response file to use them again.</li>` : "");
+    $("#btn-intake-fill").classList.toggle("hidden", !intakeDocs.length);
+  }
+
+  $("#intake-doc-list").addEventListener("click", (e) => {
+    const open = e.target.dataset.openDoc, remove = e.target.dataset.removeDoc;
+    if (open != null) {
+      const d = intakeDocs[Number(open)];
+      const bytes = Uint8Array.from(atob(d.data), (c) => c.charCodeAt(0));
+      window.open(URL.createObjectURL(new Blob([bytes], { type: d.mediaType })), "_blank", "noopener");
+    }
+    if (remove != null) { intakeDocs.splice(Number(remove), 1); renderIntakeDocs(); }
+  });
+
+  $("#intake-docs").addEventListener("change", async (e) => {
+    const errors = await addDocuments(intakeDocs, [...e.target.files]);
+    e.target.value = "";
+    if (errors.length) toast(errors[0], true);
+    renderIntakeDocs();
+  });
+
+  $("#btn-intake-fill").addEventListener("click", async () => {
+    const ctx = await getAI();
+    if (!ctx) return toast("Add your Anthropic API key in Settings to fill from documents", true);
+    const btn = $("#btn-intake-fill");
+    const name = form.elements.name.value.trim();
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner"></span> Reading documents… (1–3 min)`;
+    try {
+      const result = await ctx.ai.documentTask({
+        system: AUTOFILL_SYSTEM,
+        content: [...toDocumentBlocks(intakeDocs), { type: "text", text: autofillPrompt(name) }],
+        schema: AUTOFILL_SCHEMA,
+      });
+      const { filled, conflicts, unknown } = applyAiFill(result, name);
+      renderIntake();
+      toast(`Filled ${filled} answer(s) from the documents${conflicts ? `; ${conflicts} disagree with the vendor` : ""}${unknown ? `; ${unknown} not covered` : ""}. Review them, then click Save.`);
+    } catch (err) {
+      toast(`Fill from documents failed: ${ctx.describe(err)}`, true);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "✨ Fill from documents";
+    }
+  });
+
+  // Merges Claude's answers into the intake: fills unanswered questions, never
+  // overwrites the vendor's own answers, and records where the documents disagree.
+  function applyAiFill(result, name) {
+    pendingIntake ||= {
+      format: INTAKE_FORMAT, version: INTAKE_VERSION, vendorRef: editingId || "", vendorName: name,
+      profile: { legalName: name }, answers: {}, attested: false, analystCreated: true,
+    };
+    let filled = 0, conflicts = 0, unknown = 0;
+    for (const a of result.answers || []) {
+      if (!INTAKE_QUESTIONS.some((q) => q.id === a.id)) continue;
+      if (a.answer === "Unknown") { unknown++; continue; }
+      const r = pendingIntake.answers[a.id];
+      const ai = { answer: a.answer, comment: a.comment, evidence: a.evidence, document: a.document };
+      if (r?.answer && !["ai", "analyst"].includes(r.source)) {
+        if (r.answer !== a.answer) { r.aiSuggestion = ai; conflicts++; }
+        else { delete r.aiSuggestion; if (!r.evidence) Object.assign(r, { evidence: a.evidence, document: a.document }); }
+        continue;
+      }
+      pendingIntake.answers[a.id] = { ...ai, source: "ai" };
+      filled++;
+    }
+    const p = pendingIntake.profile;
+    const rp = result.profile || {};
+    for (const f of ["certificationDetails", "hosting", "dataLocations", "subprocessors"]) if (rp[f] && !p[f]) p[f] = rp[f];
+    p.certifications = [...new Set([...(p.certifications || []).filter((c) => c !== "None"), ...(rp.certifications || [])])];
+    const docsMeta = intakeDocs.map((d) => ({ name: d.name, size: d.size, mediaType: d.mediaType }));
+    pendingIntake.documents = [...(pendingIntake.documents || []).filter((d) => !docsMeta.some((x) => x.name === d.name)), ...docsMeta];
+    pendingIntake.aiFill = { at: new Date().toISOString(), documents: docsMeta, summary: result.summary || "" };
+    applyDerivedControls();
+    return { filled, conflicts, unknown };
   }
 
   $("#btn-intake-link").addEventListener("click", async () => {
@@ -274,7 +406,11 @@ export function initVendors({ $, $$, escapeHtml, toast, download, safeGet, safeS
     if (editingId && data.vendorRef && data.vendorRef !== editingId
       && !confirm(`This response was sent for ${data.vendorRef}${data.vendorName ? ` (${data.vendorName})` : ""}, not ${editingId}. Import it anyway?`)) return;
 
-    pendingIntake = data;
+    // Keep attached documents in memory only; save just their names.
+    const attached = Array.isArray(data.documents) ? data.documents : [];
+    intakeDocs = attached.filter((d) => d && typeof d.name === "string" && typeof d.data === "string"
+      && ["application/pdf", "text/plain", "text/markdown", "text/csv"].includes(d.mediaType));
+    pendingIntake = { ...data, documents: attached.map((d) => ({ name: String(d?.name), size: d?.size, mediaType: d?.mediaType })) };
     const f = form.elements;
     const p = data.profile;
     if (!f.name.value && p.legalName) f.name.value = p.legalName;
@@ -288,11 +424,12 @@ export function initVendors({ $, $$, escapeHtml, toast, download, safeGet, safeS
       : types.some((t) => /Financial|Employee|Credentials|Confidential/i.test(t)) ? 2 : 0;
     if (declared > levels.indexOf(f.dataSensitivity.value)) f.dataSensitivity.value = levels[declared];
 
-    const derived = deriveControlAnswers(data);
-    for (const [id, a] of Object.entries(derived)) if (f[`q_${id}`]) f[`q_${id}`].value = a;
+    const derived = applyDerivedControls();
     renderIntake();
-    updateLiveScore();
-    toast(`Intake imported – ${Object.keys(derived).length} questionnaire controls filled in. Click Save to keep it.`);
+    const unanswered = summarizeIntake(pendingIntake).counts.unanswered;
+    toast(intakeDocs.length && unanswered
+      ? `Intake imported with ${intakeDocs.length} document(s). ${unanswered} question(s) are unanswered – click ✨ Fill from documents.`
+      : `Intake imported – ${Object.keys(derived).length} questionnaire controls filled in. Click Save to keep it.`);
   });
 
   $("#btn-vendor-add").addEventListener("click", () => openEditor(null));
@@ -394,10 +531,16 @@ contract clauses we should require, and follow-up due-diligence questions to sen
     const lines = INTAKE_QUESTIONS.map((q) => {
       const r = pendingIntake.answers[q.id];
       const tag = q.type === "inverse" ? " (Yes is a red flag)" : q.type === "info" ? " (context only)" : "";
-      return `- ${q.id} [${q.domain}] ${q.text}${tag}: ${r?.answer || "Not answered"}${r?.comment ? ` – vendor comment: ${r.comment}` : ""}`;
+      const src = r?.source === "ai" ? " [filled by Claude from the vendor's documents, not attested by the vendor]"
+        : r?.source === "analyst" ? " [set by our analyst]" : "";
+      const ev = r?.evidence ? ` – evidence from ${r.document || "documents"}: "${r.evidence}"` : "";
+      const conflict = r?.aiSuggestion ? ` – NOTE: the vendor's documents suggest "${r.aiSuggestion.answer}" instead${r.aiSuggestion.evidence ? ` ("${r.aiSuggestion.evidence}")` : ""}` : "";
+      return `- ${q.id} [${q.domain}] ${q.text}${tag}: ${r?.answer || "Not answered"}${src}${r?.comment ? ` – comment: ${r.comment}` : ""}${ev}${conflict}`;
     }).join("\n");
     return `
-Vendor intake questionnaire (self-assessment completed by the vendor${pendingIntake.attested ? ", attested as accurate" : ", NOT attested"}):
+${pendingIntake.analystCreated
+    ? "Intake questionnaire completed by Claude from the vendor's documents (the vendor has not answered or attested it):"
+    : `Vendor intake questionnaire (self-assessment completed by the vendor${pendingIntake.attested ? ", attested as accurate" : ", NOT attested"}):`}
 Company: ${p.legalName}; HQ: ${p.country}; employees: ${p.employees || "?"}; hosting: ${p.hosting || "?"}; data locations: ${p.dataLocations || "?"}
 Service: ${p.serviceDescription || "?"}
 Data types: ${(p.dataTypes || []).join(", ") || "?"}; record volume: ${p.recordVolume || "?"}; access requested: ${p.access || "?"}
@@ -405,7 +548,7 @@ Certifications: ${(p.certifications || []).join(", ") || "none"}${p.certificatio
 Subprocessors: ${p.subprocessors || "none listed"}
 Intake score: ${s.score ?? "n/a"}% of scored answers favourable.
 ${lines}
-Remember these are self-attested; weigh them against independent evidence such as audit reports.`;
+${pendingIntake.aiFill ? `Documents reviewed: ${pendingIntake.aiFill.documents.map((d) => d.name).join(", ")}. Document summary: ${pendingIntake.aiFill.summary}\n` : ""}Remember vendor answers are self-attested; weigh them against independent evidence such as audit reports.`;
   }
 
   function showAssessment(a) {
