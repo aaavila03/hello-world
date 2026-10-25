@@ -106,3 +106,65 @@ export function assessOffline(risk) {
     treatment: likelihood * impact >= 6 ? "Mitigate" : "Accept",
   };
 }
+
+// Rule-based vendor review used when no API key is configured.
+// Mirrors the shape of the Claude vendor assessment.
+const REMEDIATION = {
+  policy: "Request the vendor's information security policy and evidence of annual review.",
+  cert: "Request a current SOC 2 Type II report or ISO 27001 certificate, or perform an on-site / remote audit.",
+  pentest: "Request an executive summary of a recent independent penetration test and remediation status.",
+  mfa: "Require MFA for all vendor staff and administrative access before granting access.",
+  access_review: "Require quarterly access reviews and timely leaver de-provisioning.",
+  encrypt: "Require encryption of our data at rest (AES-256) and in transit (TLS 1.2+).",
+  retention: "Define data retention, return and certified deletion at contract end.",
+  data_location: "Require documentation of data storage and processing locations.",
+  vuln: "Require defined patching SLAs (e.g. critical within 14 days) and evidence of compliance.",
+  logging: "Require security event logging, monitoring and log retention.",
+  ir: "Request the incident response plan and evidence of a recent exercise.",
+  notify: "Add a contractual obligation to notify us of breaches within 72 hours.",
+  bcp: "Request BC/DR plans and recent test results aligned to our recovery objectives.",
+  subproc: "Require a subprocessor list, change notification and flow-down of security terms.",
+  insurance: "Require cyber liability insurance with adequate coverage.",
+};
+
+export function assessVendorOffline(v, questions) {
+  const crit = { Low: 1, Medium: 2, High: 3, Critical: 4 }[v.criticality] || 2;
+  const data = { None: 1, Internal: 2, Confidential: 3, "Regulated (PII/PHI/PCI)": 4 }[v.dataSensitivity] || 2;
+  const answered = questions.filter((q) => ["Yes", "Partial", "No"].includes(v.answers?.[q.id]));
+  const strengths = questions.filter((q) => v.answers?.[q.id] === "Yes").map((q) => q.text);
+  const gaps = questions
+    .filter((q) => ["No", "Partial"].includes(v.answers?.[q.id]))
+    .map((q) => ({
+      gap: `${q.text} (${v.answers[q.id]})`,
+      severity: q.key || q.weight > 1 ? (v.answers[q.id] === "No" ? "High" : "Medium") : "Low",
+      remediation: REMEDIATION[q.id],
+    }))
+    .sort((a, b) => ["High", "Medium", "Low"].indexOf(a.severity) - ["High", "Medium", "Low"].indexOf(b.severity));
+  const unanswered = questions.filter((q) => !v.answers?.[q.id]);
+  const highGaps = gaps.filter((g) => g.severity === "High").length;
+
+  const exposure = crit + data;
+  const tier = highGaps >= 2 && exposure >= 6 ? "Critical"
+    : highGaps >= 1 || exposure >= 7 ? "High"
+    : gaps.length || exposure >= 5 ? "Medium" : "Low";
+  const recommendation = answered.length < questions.length / 2 ? "Needs more information"
+    : highGaps >= 2 && exposure >= 6 ? "Reject"
+    : gaps.length ? "Approve with conditions" : "Approve";
+
+  return {
+    risk_tier: tier,
+    recommendation,
+    summary: `${v.name} has ${v.criticality || "unspecified"} business criticality and handles ${v.dataSensitivity || "unspecified"} data. `
+      + `${answered.length} of ${questions.length} questionnaire items are answered, with ${gaps.length} gap(s) including ${highGaps} high-severity. `
+      + (recommendation === "Needs more information" ? "Complete the questionnaire before deciding." : ""),
+    strengths,
+    gaps,
+    contract_clauses: [
+      "Right to audit and to receive annual independent assurance reports",
+      "Breach notification within 72 hours with cooperation in investigations",
+      ...(data >= 3 ? ["Data processing agreement covering purpose limitation, retention, deletion and subprocessors"] : []),
+      ...(crit >= 3 ? ["Service levels, business continuity commitments and exit / transition assistance"] : []),
+    ],
+    follow_up_questions: unanswered.slice(0, 6).map((q) => `Please confirm: ${q.text.charAt(0).toLowerCase()}${q.text.slice(1)}?`),
+  };
+}

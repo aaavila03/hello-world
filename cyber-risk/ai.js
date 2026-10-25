@@ -8,6 +8,7 @@ const SYSTEM_PROMPT = `You are a senior cyber risk analyst supporting an organis
 You help defenders identify, score, prioritise and treat cyber security risks.
 Scoring uses a 5x5 matrix: likelihood 1 (rare) to 5 (almost certain), impact 1 (negligible) to 5 (severe); score = likelihood x impact.
 Map recommended controls to NIST CSF 2.0 functions (Govern, Identify, Protect, Detect, Respond, Recover) and, where useful, CIS Controls v8.
+For third-party risk, assess vendors on criticality, data sensitivity, access and the strength of their security controls.
 Be concrete, defensive and business-focused. Do not provide offensive exploitation steps.`;
 
 const ASSESSMENT_SCHEMA = {
@@ -62,17 +63,21 @@ export class RiskAI {
     };
   }
 
-  async assessRisk(risk) {
+  // One-shot request whose reply is constrained to the given JSON schema.
+  async structured(prompt, schema) {
     const response = await this.client.beta.messages.create({
       ...this.baseParams(),
       max_tokens: 16000,
-      output_config: {
-        effort: this.effort,
-        format: { type: "json_schema", schema: ASSESSMENT_SCHEMA },
-      },
-      messages: [{
-        role: "user",
-        content: `Assess this cyber risk for our organisation.
+      output_config: { effort: this.effort, format: { type: "json_schema", schema } },
+      messages: [{ role: "user", content: prompt }],
+    });
+    checkRefusal(response);
+    const text = response.content.filter((b) => b.type === "text").map((b) => b.text).join("");
+    return JSON.parse(text);
+  }
+
+  assessRisk(risk) {
+    return this.structured(`Assess this cyber risk for our organisation.
 
 Title: ${risk.title || "(none)"}
 Asset / system: ${risk.asset || "(unspecified)"}
@@ -80,12 +85,7 @@ Description: ${risk.description || "(none)"}
 Existing controls: ${risk.controls || "(none listed)"}
 
 Score inherent likelihood and impact, list 2-4 realistic threat scenarios, recommend 3-6 prioritised controls,
-and estimate residual likelihood/impact once those controls are in place.`,
-      }],
-    });
-    checkRefusal(response);
-    const text = response.content.filter((b) => b.type === "text").map((b) => b.text).join("");
-    return JSON.parse(text);
+and estimate residual likelihood/impact once those controls are in place.`, ASSESSMENT_SCHEMA);
   }
 
   // Streams markdown text to onText; resolves with the full text.
@@ -104,7 +104,7 @@ and estimate residual likelihood/impact once those controls are in place.`,
   executiveReport(registerSummary, onText) {
     return this.stream([{
       role: "user",
-      content: `Here is our current cyber risk register as JSON:
+      content: `Here is our current cyber risk register and third-party vendor inventory as JSON:
 
 ${registerSummary}
 
@@ -112,14 +112,15 @@ Write a concise board-level executive report in Markdown with these sections:
 ## Overall risk posture
 ## Top risks requiring attention
 ## Themes and systemic weaknesses
+## Third-party / vendor risk
 ## Recommended priorities for the next 90 days
 ## Risks that may be over- or under-scored
-Keep it under 600 words and refer to risks by their ID.`,
+Keep it under 700 words and refer to risks and vendors by their ID.`,
     }], onText);
   }
 
   chat(history, registerSummary, onText) {
-    const context = `Current risk register (JSON) for reference:\n\n${registerSummary}`;
+    const context = `Current risk register and vendor inventory (JSON) for reference:\n\n${registerSummary}`;
     const [first, ...rest] = history;
     const messages = [{ role: "user", content: `${context}\n\n---\n\n${first.content}` }, ...rest];
     return this.stream(messages, onText);

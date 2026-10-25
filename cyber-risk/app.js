@@ -1,5 +1,6 @@
 // RiskPilot – AI cyber risk manager. Plain ES modules, no build step.
 import { assessOffline } from "./heuristics.js";
+import { initVendors, residualTier, isOverdue } from "./vendors.js";
 
 const STORE_KEY = "riskpilot.risks";
 const SETTINGS_KEY = "riskpilot.settings";
@@ -107,12 +108,16 @@ async function getAI() {
 }
 
 function registerSummary() {
-  return JSON.stringify(risks.map((r) => ({
+  return JSON.stringify({ risks: riskSummary(), vendors: vendorsApi.summary() }, null, 1);
+}
+
+function riskSummary() {
+  return risks.map((r) => ({
     id: r.id, title: r.title, description: r.description, asset: r.asset, category: r.category,
     likelihood: Number(r.likelihood), impact: Number(r.impact), inherent: inherent(r),
     residual: residual(r), owner: r.owner, status: r.status, treatment: r.treatment,
     controls: r.controls, due: r.due,
-  })), null, 1);
+  }));
 }
 
 function updateAiStatus() {
@@ -127,6 +132,7 @@ let sortKey = "score", sortDir = -1, cellFilter = null;
 
 function render() {
   renderDashboard();
+  vendorsApi.render();
   renderTable();
   updateAiStatus();
 }
@@ -137,6 +143,8 @@ function renderDashboard() {
   const high = active.filter((r) => inherent(r) >= 12 && inherent(r) < 20).length;
   const avgIn = active.length ? (active.reduce((s, r) => s + inherent(r), 0) / active.length).toFixed(1) : "–";
   const avgRes = active.length ? (active.reduce((s, r) => s + residual(r), 0) / active.length).toFixed(1) : "–";
+  const liveVendors = vendorsApi.all().filter((v) => v.status !== "Offboarded");
+  const vendorsDue = liveVendors.filter(isOverdue).length;
   const overdue = active.filter((r) => r.due && new Date(r.due) < new Date(new Date().toDateString())).length;
   $("#kpis").innerHTML = [
     ["Active risks", active.length, ""],
@@ -145,6 +153,8 @@ function renderDashboard() {
     ["Avg inherent score", avgIn, ""],
     ["Avg residual score", avgRes, ""],
     ["Overdue actions", overdue, overdue ? "high" : ""],
+    ["High-risk vendors", liveVendors.filter((v) => ["High", "Critical"].includes(residualTier(v))).length, ""],
+    ["Vendor reviews due", vendorsDue, vendorsDue ? "high" : ""],
   ].map(([k, v, c]) => `<div class="kpi ${c}"><div class="kpi-val">${v}</div><div class="kpi-label">${k}</div></div>`).join("");
 
   // Heat map: rows likelihood 5..1, columns impact 1..5
@@ -162,6 +172,13 @@ function renderDashboard() {
     ? top.map((r) => `<li><a href="#" data-edit="${escapeHtml(r.id)}">${escapeHtml(r.id)} · ${escapeHtml(r.title)}</a>
         <span class="badge ${rating(inherent(r)).cls}">${inherent(r)}</span></li>`).join("")
     : `<li class="muted">No active risks yet.</li>`;
+
+  const tiers = ["Critical", "High", "Medium", "Low"];
+  const tierCounts = tiers.map((t) => liveVendors.filter((v) => residualTier(v) === t).length);
+  const maxTier = Math.max(1, ...tierCounts);
+  $("#vendor-tiers").innerHTML = liveVendors.length
+    ? tiers.map((t, k) => `<div class="bar-row"><span>${t}</span><div class="bar"><div class="${t.toLowerCase()}" style="width:${(tierCounts[k] / maxTier) * 100}%"></div></div><span>${tierCounts[k]}</span></div>`).join("")
+    : `<p class="muted">No vendors yet.</p>`;
 
   const byCat = {};
   active.forEach((r) => { byCat[r.category] = (byCat[r.category] || 0) + 1; });
@@ -404,16 +421,18 @@ $("#btn-save-settings").addEventListener("click", () => {
 });
 
 $("#btn-sample").addEventListener("click", async () => {
-  if (risks.length && !confirm("Add sample risks to your existing register?")) return;
-  const { SAMPLE_RISKS } = await import("./sample-data.js");
+  if ((risks.length || vendorsApi.all().length) && !confirm("Add sample risks and vendors to your existing data?")) return;
+  const { SAMPLE_RISKS, SAMPLE_VENDORS } = await import("./sample-data.js");
   for (const r of SAMPLE_RISKS) risks.push({ ...r, id: nextId(), created: new Date().toISOString() });
+  vendorsApi.addMany(SAMPLE_VENDORS);
   saveRisks();
-  toast(`Loaded ${SAMPLE_RISKS.length} sample risks`);
+  toast(`Loaded ${SAMPLE_RISKS.length} sample risks and ${SAMPLE_VENDORS.length} vendors`);
   showView("dashboard");
 });
 $("#btn-clear").addEventListener("click", () => {
-  if (!confirm("Delete ALL risks? Export first if you need a backup.")) return;
+  if (!confirm("Delete ALL risks and vendors? Export JSON first if you need a backup.")) return;
   risks = [];
+  vendorsApi.replaceAll([]);
   saveRisks();
 });
 
@@ -426,25 +445,42 @@ $("#btn-export-csv").addEventListener("click", () => {
   download("risk-register.csv", csv, "text/csv");
 });
 $("#btn-export-json").addEventListener("click", () => {
-  download("risk-register.json", JSON.stringify(risks, null, 2), "application/json");
+  download("riskpilot-backup.json", JSON.stringify({ risks, vendors: vendorsApi.all() }, null, 2), "application/json");
 });
 $("#import-json").addEventListener("change", async (e) => {
   const file = e.target.files[0];
   if (!file) return;
   try {
-    const data = JSON.parse(await file.text());
-    if (!Array.isArray(data)) throw new Error("Expected an array of risks");
+    const parsed = JSON.parse(await file.text());
+    // Accepts a plain array of risks (older exports) or a { risks, vendors } backup.
+    const data = Array.isArray(parsed) ? parsed : parsed.risks;
+    if (!Array.isArray(data)) throw new Error("Expected an array of risks or a RiskPilot backup");
+    const newVendors = Array.isArray(parsed.vendors) ? parsed.vendors.filter((v) => v.name) : [];
+    if (newVendors.length) vendorsApi.addMany(newVendors);
     for (const r of data) {
       if (!r.title) continue;
       const id = r.id && !risks.some((x) => x.id === r.id) ? r.id : nextId();
       risks.push({ ...r, id });
     }
     saveRisks();
-    toast(`Imported ${data.length} risks`);
+    toast(`Imported ${data.length} risks${newVendors.length ? ` and ${newVendors.length} vendors` : ""}`);
   } catch (err) {
     toast(`Import failed: ${err.message}`, true);
   }
   e.target.value = "";
+});
+
+// ---------- vendors ----------
+function addRegisterRisk(risk) {
+  const id = nextId();
+  risks.push({ ...risk, id, created: new Date().toISOString() });
+  saveRisks();
+  return id;
+}
+
+const vendorsApi = initVendors({
+  $, $$, escapeHtml, toast, download, safeGet, safeSet, getAI, addRegisterRisk,
+  onChange: renderDashboard,
 });
 
 loadSettingsForm();
