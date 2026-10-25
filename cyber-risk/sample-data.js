@@ -56,3 +56,35 @@ export const SAMPLE_RISKS = [
     controls: "Privacy policy", due: "2027-02-01",
   },
 ];
+
+export const SAMPLE_VENDORS = [
+  {
+    name: "CloudPay Payroll", service: "Payroll processing (SaaS)", owner: "HR Director",
+    criticality: "High", dataSensitivity: "Regulated (PII/PHI/PCI)", access: "Read-only / API",
+    dataTypes: "Employee names, bank details, national ID numbers, salaries", status: "Active", lastAssessed: "2026-03-10",
+    answers: { policy: "Yes", cert: "Yes", pentest: "Yes", mfa: "Yes", access_review: "Yes", encrypt: "Yes", retention: "Partial",
+      data_location: "Yes", vuln: "Yes", logging: "Yes", ir: "Yes", notify: "Yes", bcp: "Partial", subproc: "Yes", insurance: "Yes" },
+    notes: "SOC 2 Type II (2025) with no exceptions. DR test last performed 2024.",
+  },
+  {
+    name: "NetOps MSP", service: "Managed network & firewall services", owner: "Network Team",
+    criticality: "Critical", dataSensitivity: "Confidential", access: "Privileged / admin",
+    dataTypes: "Network configs, admin credentials, logs", status: "Active", lastAssessed: "2025-02-01",
+    answers: { policy: "Yes", cert: "No", pentest: "Partial", mfa: "Partial", access_review: "No", encrypt: "Yes",
+      vuln: "Partial", logging: "Yes", ir: "Partial", notify: "No", bcp: "Yes", subproc: "No" },
+    notes: "Shared admin accounts used by MSP engineers. No SOC report available.",
+  },
+  {
+    name: "MailBlast Marketing", service: "Email marketing platform", owner: "Marketing Lead",
+    criticality: "Medium", dataSensitivity: "Confidential", access: "Read-only / API",
+    dataTypes: "Customer names and email addresses", status: "Under review", lastAssessed: "",
+    answers: { policy: "Yes", cert: "Yes", mfa: "Yes", encrypt: "Yes" },
+    notes: "",
+  },
+  {
+    name: "OfficeSnacks Co", service: "Office catering", owner: "Facilities",
+    criticality: "Low", dataSensitivity: "None", access: "None",
+    dataTypes: "Billing contact only", status: "Active", lastAssessed: "2025-06-15",
+    answers: {}, notes: "No access to systems or data.",
+  },
+];
