@@ -223,7 +223,15 @@
         <label>Last assessed <input name="lastAssessed" type="date" /></label>
         <label class="full">Data types / scope <input name="dataTypes" placeholder="What data or systems can they reach?" /></label>
       </div>
+      <h3>Intake questionnaire</h3>
+      <div class="intake-tools">
+        <button type="button" id="btn-intake-link">Copy link for vendor</button>
+        <label class="button">Import response<input id="intake-file" type="file" accept="application/json,.json" hidden /></label>
+        <a href="intake.html" target="_blank" rel="noopener" class="small">Preview form ↗</a>
+      </div>
+      <div id="vendor-intake" class="intake-box"></div>
       <h3>Security questionnaire</h3>
+      <p class="muted small">Importing an intake response fills these in automatically. You can still adjust them.</p>
       <div id="vendor-questions" class="questions"></div>
       <label class="full">Notes and evidence
         <textarea name="notes" rows="4" placeholder="Paste a SOC 2 summary, questionnaire excerpts, audit findings or your own notes. Claude reads these during the AI review."></textarea>

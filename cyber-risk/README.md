@@ -14,6 +14,10 @@ A browser-only cyber risk management app with Claude-powered analysis. No build 
   - review scheduling by inherent tier (Critical 6 months, High 12, Medium 24, Low 36) with overdue flags;
   - **✨ AI vendor review** – Claude reads the profile, answers and pasted evidence (e.g. a SOC 2 summary) and returns a risk tier, Approve / Approve with conditions / Needs more information / Reject, strengths, prioritised gaps with remediation, contract clauses to require and follow-up questions to send the vendor;
   - one click to raise a Third-Party risk in the register, and CSV export.
+- **Vendor intake questionnaire** (`intake.html`) – a vendor-facing security questionnaire in the style of short-form industry questionnaires such as SIG Lite (original content, not the licensed Shared Assessments SIG):
+  - a company profile (contacts, services, data types, hosting and data locations, certifications, subprocessors) and 84 Yes / No / N/A questions with comments across 19 domains: governance, assurance, HR, assets, identity & access, data protection, privacy, application security, vulnerability management, endpoint, network, cloud, logging, incident management, resilience, physical security, subcontractors, compliance & insurance and AI;
+  - progress tracking, autosave in the vendor's browser, prompts for comments on unfavourable answers, an attestation, and Print / Save as PDF;
+  - the vendor downloads a response file and emails it back. In the vendor editor, **Copy link for vendor** creates a pre-filled link and **Import response** loads the file: it shows an intake score and the answers needing attention, fills in the 15-control questionnaire (all mapped answers Yes → Yes, all No → No, mixed → Partial), raises data sensitivity to match the declared data types, and gives the full response to the AI vendor review.
 - **Executive report** – a streamed, board-level summary of the whole register and vendor inventory.
 - **Ask the analyst** – a chat assistant that answers questions with your register and vendors as context.
 - **Offline mode** – without an API key, rule-based heuristics still give baseline risk and vendor assessments.
