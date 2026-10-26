@@ -107,7 +107,7 @@ export function isOverdue(v) {
 const tierClass = (t) => ({ Low: "low", Medium: "medium", High: "high", Critical: "critical" }[t]);
 
 // ---------- module ----------
-export function initVendors({ $, $$, escapeHtml, toast, download, safeGet, safeSet, getAI, addRegisterRisk, onChange }) {
+export function initVendors({ $, $$, escapeHtml, toast, download, safeGet, safeSet, getAI, getOrgName, addRegisterRisk, onChange }) {
   let vendors = [];
   try { vendors = JSON.parse(safeGet(localStorage, VENDOR_STORE_KEY) || "[]"); } catch { vendors = []; }
   let sortKey = "residual", sortDir = -1;
@@ -385,6 +385,7 @@ export function initVendors({ $, $$, escapeHtml, toast, download, safeGet, safeS
     const url = new URL("intake.html", location.href);
     url.searchParams.set("v", name);
     if (editingId) url.searchParams.set("ref", editingId);
+    if (getOrgName()) url.searchParams.set("org", getOrgName());
     try {
       await navigator.clipboard.writeText(url.href);
       toast("Intake link copied – send it to the vendor");

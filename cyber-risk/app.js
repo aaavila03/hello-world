@@ -1,6 +1,7 @@
 // RiskPilot – AI cyber risk manager. Plain ES modules, no build step.
 import { assessOffline } from "./heuristics.js";
 import { initVendors, residualTier, isOverdue } from "./vendors.js";
+import { REPORT_SCHEMA, reportPrompt, renderReport, reportMarkdown } from "./report.js";
 
 const STORE_KEY = "riskpilot.risks";
 const SETTINGS_KEY = "riskpilot.settings";
@@ -18,7 +19,7 @@ function safeSet(storage, key, value) {
 }
 
 let risks = loadRisks();
-let settings = { model: "claude-opus-5-5", effort: "medium", remember: false,
+let settings = { model: "claude-opus-5-5", effort: "medium", remember: false, orgName: "",
   ...JSON.parse(safeGet(localStorage, SETTINGS_KEY) || "{}") };
 let apiKey = safeGet(localStorage, API_KEY_KEY) || safeGet(sessionStorage, API_KEY_KEY) || "";
 
@@ -115,6 +116,7 @@ function riskSummary() {
   return risks.map((r) => ({
     id: r.id, title: r.title, description: r.description, asset: r.asset, category: r.category,
     likelihood: Number(r.likelihood), impact: Number(r.impact), inherent: inherent(r),
+    residualLikelihood: Number(r.residualLikelihood || r.likelihood), residualImpact: Number(r.residualImpact || r.impact),
     residual: residual(r), owner: r.owner, status: r.status, treatment: r.treatment,
     controls: r.controls, due: r.due,
   }));
@@ -341,25 +343,60 @@ function showAssessment(a, offline) {
 }
 
 // ---------- AI analyst ----------
+let lastReport = null;
+
+function showReport(ai) {
+  lastReport = { risks: riskSummary(), vendors: vendorsApi.summary(), ai, generatedAt: new Date().toISOString(), title: settings.orgName || "RiskPilot" };
+  $("#report").innerHTML = renderReport(lastReport);
+  $("#btn-print-report").classList.remove("hidden");
+  $("#btn-copy-report").classList.remove("hidden");
+}
+
 $("#btn-report").addEventListener("click", async () => {
   const out = $("#report");
   if (!risks.length) return toast("Your register is empty", true);
   const ctx = await getAI();
-  if (!ctx) { out.innerHTML = `<p class="muted">Add your Anthropic API key in <a href="#" id="go-settings">Settings</a> to generate reports.</p>`; return; }
+  if (!ctx) {
+    showReport(null);
+    toast("Showing the data-only briefing. Add an API key in Settings for Claude's analysis.");
+    return;
+  }
   const btn = $("#btn-report");
   btn.disabled = true;
-  let text = "";
-  out.innerHTML = `<div class="spinner"></div>`;
+  btn.innerHTML = `<span class="spinner"></span> Writing briefing…`;
+  out.innerHTML = `<div class="rh-loading"><div class="spinner"></div><p>Claude is analysing ${risks.length} risks and ${vendorsApi.all().length} vendors. This usually takes under a minute.</p></div>`;
   try {
-    text = await ctx.ai.executiveReport(registerSummary(), (d) => { text += d; out.innerHTML = renderMarkdown(text); });
-    out.innerHTML = renderMarkdown(text);
-    $("#btn-copy-report").classList.remove("hidden");
-    $("#btn-copy-report").onclick = () => navigator.clipboard.writeText(text).then(() => toast("Copied"));
+    showReport(await ctx.ai.structured(reportPrompt(registerSummary()), REPORT_SCHEMA));
   } catch (err) {
-    out.innerHTML += `<p class="error-text">${escapeHtml(ctx.describe(err))}</p>`;
+    out.innerHTML = `<p class="error-text">Briefing failed: ${escapeHtml(ctx.describe(err))}</p>`;
   } finally {
     btn.disabled = false;
+    btn.textContent = "✨ Generate briefing";
   }
+});
+
+$("#btn-copy-report").addEventListener("click", () => {
+  if (lastReport) navigator.clipboard.writeText(reportMarkdown(lastReport)).then(() => toast("Briefing copied as text"));
+});
+$("#btn-print-report").addEventListener("click", () => {
+  document.body.classList.add("printing-report");
+  window.print();
+});
+window.addEventListener("afterprint", () => document.body.classList.remove("printing-report"));
+
+// Hover tooltips for anything with a data-tip attribute (charts, chips).
+const tooltip = $("#tooltip");
+document.addEventListener("mouseover", (e) => {
+  const el = e.target.closest("[data-tip]");
+  if (!el) { tooltip.classList.add("hidden"); return; }
+  tooltip.textContent = el.dataset.tip;
+  tooltip.classList.remove("hidden");
+});
+document.addEventListener("mousemove", (e) => {
+  if (tooltip.classList.contains("hidden")) return;
+  const x = Math.min(e.clientX + 14, innerWidth - tooltip.offsetWidth - 8);
+  const y = e.clientY + 18 + tooltip.offsetHeight > innerHeight ? e.clientY - tooltip.offsetHeight - 10 : e.clientY + 18;
+  tooltip.style.transform = `translate(${x}px, ${y}px)`;
 });
 
 document.addEventListener("click", (e) => {
@@ -408,10 +445,11 @@ function loadSettingsForm() {
   $("#remember-key").checked = settings.remember;
   $("#model").value = settings.model;
   $("#effort").value = settings.effort;
+  $("#org-name").value = settings.orgName;
 }
 $("#btn-save-settings").addEventListener("click", () => {
   apiKey = $("#api-key").value.trim();
-  settings = { model: $("#model").value, effort: $("#effort").value, remember: $("#remember-key").checked };
+  settings = { model: $("#model").value, effort: $("#effort").value, remember: $("#remember-key").checked, orgName: $("#org-name").value.trim() };
   safeSet(localStorage, SETTINGS_KEY, JSON.stringify(settings));
   safeSet(localStorage, API_KEY_KEY, settings.remember && apiKey ? apiKey : null);
   safeSet(sessionStorage, API_KEY_KEY, apiKey || null);
@@ -480,6 +518,7 @@ function addRegisterRisk(risk) {
 
 const vendorsApi = initVendors({
   $, $$, escapeHtml, toast, download, safeGet, safeSet, getAI, addRegisterRisk,
+  getOrgName: () => settings.orgName,
   onChange: renderDashboard,
 });
 
