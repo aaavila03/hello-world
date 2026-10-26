@@ -1,0 +1,5 @@
+# Replace the contact and expiry before going live (RFC 9116).
+Contact: mailto:security@your-domain.example
+Expires: 2027-10-26T00:00:00.000Z
+Preferred-Languages: en
+Policy: https://your-domain.example/security

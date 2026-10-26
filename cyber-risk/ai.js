@@ -1,101 +1,13 @@
-// Claude integration for the cyber risk app.
-// Runs entirely in the browser with the user's own Anthropic API key.
-import Anthropic from "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@0.133.0/+esm";
+// AI clients. Both expose the same methods; the task definitions (system
+// prompts, schemas, limits) come from ai-tasks.js.
+//
+//   CloudAI  calls the server-side AI function; the API key never reaches the browser.
+//   LocalAI  demo mode only: calls Anthropic from the browser with the user's own key.
+import { buildRequest, messageText, TaskInputError } from "./ai-tasks.js";
 
-const FALLBACK_BETA = "server-side-fallback-2026-07-01";
-
-const SYSTEM_PROMPT = `You are a senior cyber risk analyst supporting an organisation's risk management program.
-You help defenders identify, score, prioritise and treat cyber security risks.
-Scoring uses a 5x5 matrix: likelihood 1 (rare) to 5 (almost certain), impact 1 (negligible) to 5 (severe); score = likelihood x impact.
-Map recommended controls to NIST CSF 2.0 functions (Govern, Identify, Protect, Detect, Respond, Recover) and, where useful, CIS Controls v8.
-For third-party risk, assess vendors on criticality, data sensitivity, access and the strength of their security controls.
-Be concrete, defensive and business-focused. Do not provide offensive exploitation steps.`;
-
-const ASSESSMENT_SCHEMA = {
-  type: "object",
-  properties: {
-    category: {
-      type: "string",
-      enum: ["Ransomware/Malware", "Phishing/Social Engineering", "Data Breach", "Insider Threat",
-        "Third-Party/Supply Chain", "Cloud Misconfiguration", "Vulnerability/Patching",
-        "Identity & Access", "Availability/DDoS", "Compliance/Regulatory", "Other"],
-    },
-    likelihood: { type: "integer", enum: [1, 2, 3, 4, 5] },
-    impact: { type: "integer", enum: [1, 2, 3, 4, 5] },
-    rationale: { type: "string" },
-    threat_scenarios: { type: "array", items: { type: "string" } },
-    recommended_controls: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          control: { type: "string" },
-          csf_function: { type: "string", enum: ["Govern", "Identify", "Protect", "Detect", "Respond", "Recover"] },
-          priority: { type: "string", enum: ["High", "Medium", "Low"] },
-        },
-        required: ["control", "csf_function", "priority"],
-        additionalProperties: false,
-      },
-    },
-    residual_likelihood: { type: "integer", enum: [1, 2, 3, 4, 5] },
-    residual_impact: { type: "integer", enum: [1, 2, 3, 4, 5] },
-    treatment: { type: "string", enum: ["Mitigate", "Transfer", "Avoid", "Accept"] },
-  },
-  required: ["category", "likelihood", "impact", "rationale", "threat_scenarios", "recommended_controls",
-    "residual_likelihood", "residual_impact", "treatment"],
-  additionalProperties: false,
-};
-
-export class RiskAI {
-  constructor({ apiKey, model, effort }) {
-    this.client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
-    this.model = model;
-    this.effort = effort;
-  }
-
-  baseParams() {
-    return {
-      model: this.model,
-      system: SYSTEM_PROMPT,
-      output_config: { effort: this.effort },
-      betas: [FALLBACK_BETA],
-      fallbacks: "default",
-    };
-  }
-
-  // One-shot request whose reply is constrained to the given JSON schema.
-  // Streams so long answers don't hit request timeouts.
-  async structured(prompt, schema) {
-    const stream = this.client.beta.messages.stream({
-      ...this.baseParams(),
-      max_tokens: 32000,
-      output_config: { effort: this.effort, format: { type: "json_schema", schema } },
-      messages: [{ role: "user", content: prompt }],
-    });
-    const response = await stream.finalMessage();
-    checkRefusal(response);
-    const text = response.content.filter((b) => b.type === "text").map((b) => b.text).join("");
-    return JSON.parse(text);
-  }
-
-  // Long-input structured task over attached documents, with its own system prompt.
-  // Streams so large documents and long answers don't hit request timeouts.
-  async documentTask({ system, content, schema }) {
-    const stream = this.client.beta.messages.stream({
-      ...this.baseParams(),
-      system,
-      max_tokens: 64000,
-      output_config: { effort: this.effort, format: { type: "json_schema", schema } },
-      messages: [{ role: "user", content }],
-    });
-    const response = await stream.finalMessage();
-    checkRefusal(response);
-    const text = response.content.filter((b) => b.type === "text").map((b) => b.text).join("");
-    return JSON.parse(text);
-  }
-
+class BaseAI {
   assessRisk(risk) {
-    return this.structured(`Assess this cyber risk for our organisation.
+    return this.run("assess_risk", { prompt: `Assess this cyber risk for our organisation.
 
 Title: ${risk.title || "(none)"}
 Asset / system: ${risk.asset || "(unspecified)"}
@@ -103,45 +15,110 @@ Description: ${risk.description || "(none)"}
 Existing controls: ${risk.controls || "(none listed)"}
 
 Score inherent likelihood and impact, list 2-4 realistic threat scenarios, recommend 3-6 prioritised controls,
-and estimate residual likelihood/impact once those controls are in place.`, ASSESSMENT_SCHEMA);
+and estimate residual likelihood/impact once those controls are in place.` });
   }
 
-  // Streams markdown text to onText; resolves with the full text.
-  async stream(messages, onText) {
-    const stream = this.client.beta.messages.stream({
-      ...this.baseParams(),
-      max_tokens: 64000,
-      messages,
-    });
-    stream.on("text", (delta) => onText(delta));
-    const final = await stream.finalMessage();
-    checkRefusal(final);
-    return final.content.filter((b) => b.type === "text").map((b) => b.text).join("");
-  }
+  vendorReview(prompt) { return this.run("vendor_review", { prompt }); }
+  briefing(prompt) { return this.run("briefing", { prompt }); }
+  fillFromDocuments(documents, prompt) { return this.run("fill_documents", { documents, prompt }); }
 
   chat(history, registerSummary, onText) {
     const context = `Current risk register and vendor inventory (JSON) for reference:\n\n${registerSummary}`;
     const [first, ...rest] = history;
-    const messages = [{ role: "user", content: `${context}\n\n---\n\n${first.content}` }, ...rest];
-    return this.stream(messages, onText);
+    return this.runChat([{ role: "user", content: `${context}\n\n---\n\n${first.content}` }, ...rest], onText);
   }
 }
 
-function checkRefusal(message) {
-  if (message.stop_reason === "refusal") {
-    const why = message.stop_details?.explanation || message.stop_details?.category || "policy";
-    throw new Error(`The model declined this request (${why}). Try rephrasing it in defensive terms.`);
+export class CloudAI extends BaseAI {
+  constructor({ client, url, anonKey, orgId }) {
+    super();
+    Object.assign(this, { client, url: `${url}/functions/v1/ai`, anonKey, orgId });
   }
-  if (message.stop_reason === "max_tokens") {
-    throw new Error("The response was cut off (max_tokens reached).");
+
+  async request(task, input) {
+    const { data } = await this.client.auth.getSession();
+    const token = data?.session?.access_token;
+    if (!token) throw new Error("Your session has expired. Please sign in again.");
+    const res = await fetch(this.url, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}`, apikey: this.anonKey },
+      body: JSON.stringify({ task, orgId: this.orgId, input }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `The AI service returned an error (${res.status}).`);
+    }
+    return res;
+  }
+
+  async run(task, input) {
+    const res = await this.request(task, input);
+    return (await res.json()).result;
+  }
+
+  // The function streams newline-delimited JSON: {"text"} chunks then {"done"} or {"error"}.
+  async runChat(messages, onText) {
+    const res = await this.request("chat", { messages });
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "", full = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (!line) continue;
+        const msg = JSON.parse(line);
+        if (msg.error) throw new Error(msg.error);
+        if (msg.text) { full += msg.text; onText(msg.text); }
+      }
+    }
+    return full;
+  }
+}
+
+let sdk;
+async function loadSdk() {
+  sdk ||= (await import("./vendor/anthropic-sdk.mjs")).default;
+  return sdk;
+}
+
+export class LocalAI extends BaseAI {
+  constructor({ apiKey, model, effort }) {
+    super();
+    Object.assign(this, { apiKey, model, effort });
+  }
+
+  async client() {
+    const Anthropic = await loadSdk();
+    return new Anthropic({ apiKey: this.apiKey, dangerouslyAllowBrowser: true });
+  }
+
+  async run(task, input) {
+    const client = await this.client();
+    const params = buildRequest(task, input, { model: this.model, effort: this.effort });
+    const message = await client.beta.messages.stream(params).finalMessage();
+    return JSON.parse(messageText(message));
+  }
+
+  async runChat(messages, onText) {
+    const client = await this.client();
+    const stream = client.beta.messages.stream(buildRequest("chat", { messages }, { model: this.model, effort: this.effort }));
+    stream.on("text", (delta) => onText(delta));
+    return messageText(await stream.finalMessage());
   }
 }
 
 export function describeError(err) {
-  if (err instanceof Anthropic.AuthenticationError) return "Invalid API key. Check it in Settings.";
-  if (err instanceof Anthropic.PermissionDeniedError) return "This API key is not permitted to use the selected model.";
-  if (err instanceof Anthropic.RateLimitError) return "Rate limited by the API. Wait a moment and try again.";
-  if (err instanceof Anthropic.APIConnectionError) return "Could not reach the Anthropic API. Check your connection.";
-  if (err instanceof Anthropic.APIError) return `API error ${err.status ?? ""}: ${err.message}`;
+  if (err instanceof TaskInputError) return err.message;
+  if (!sdk) return err?.message || String(err);
+  if (err instanceof sdk.AuthenticationError) return "Invalid API key. Check it in Settings.";
+  if (err instanceof sdk.PermissionDeniedError) return "This API key is not permitted to use the selected model.";
+  if (err instanceof sdk.RateLimitError) return "Rate limited by the API. Wait a moment and try again.";
+  if (err instanceof sdk.APIConnectionError) return "Could not reach the Anthropic API. Check your connection.";
+  if (err instanceof sdk.APIError) return `API error ${err.status ?? ""}: ${err.message}`;
   return err?.message || String(err);
 }

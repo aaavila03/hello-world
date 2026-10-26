@@ -1,11 +1,19 @@
 // RiskPilot – AI cyber risk manager. Plain ES modules, no build step.
 import { assessOffline } from "./heuristics.js";
 import { initVendors, residualTier, isOverdue } from "./vendors.js";
-import { REPORT_SCHEMA, reportPrompt, renderReport, reportMarkdown } from "./report.js";
+import { reportPrompt, renderReport, reportMarkdown } from "./report.js";
+import { LocalStore, CloudStore, sanitizeRecord, ID_PATTERN } from "./store.js";
+import { CloudAI, LocalAI, describeError } from "./ai.js";
+import { SUPABASE_URL } from "./config.js";
 
-const STORE_KEY = "riskpilot.risks";
 const SETTINGS_KEY = "riskpilot.settings";
 const API_KEY_KEY = "riskpilot.apiKey";
+
+// Clickjacking defence for hosts that can't send a frame-ancestors header.
+if (window.top !== window.self) {
+  document.documentElement.innerHTML = "";
+  throw new Error("RiskPilot cannot be embedded in another site.");
+}
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -18,18 +26,23 @@ function safeSet(storage, key, value) {
   try { value == null ? storage.removeItem(key) : storage.setItem(key, value); } catch { /* storage unavailable */ }
 }
 
-let risks = loadRisks();
+let risks = [];
+let store;          // LocalStore (demo) or CloudStore (signed in)
+let cloud = null;   // { client, user, org, url, anonKey } when signed in
+let cloudAI = null;
+let workspaceApi = null;
+let vendorsApi;
 let settings = { model: "claude-opus-5-5", effort: "medium", remember: false, orgName: "",
   ...JSON.parse(safeGet(localStorage, SETTINGS_KEY) || "{}") };
 let apiKey = safeGet(localStorage, API_KEY_KEY) || safeGet(sessionStorage, API_KEY_KEY) || "";
 
-function loadRisks() {
-  try { return JSON.parse(safeGet(localStorage, STORE_KEY) || "[]"); } catch { return []; }
-}
 function saveRisks() {
-  safeSet(localStorage, STORE_KEY, JSON.stringify(risks));
+  store.save("risks", risks);
   render();
 }
+
+const canEdit = () => !cloud || ["analyst", "admin", "owner"].includes(cloud.org.role);
+const orgName = () => (cloud ? cloud.org.name : settings.orgName);
 
 // ---------- scoring ----------
 const score = (l, i) => Number(l) * Number(i);
@@ -101,12 +114,14 @@ function download(name, content, type) {
 }
 
 // ---------- AI ----------
-let aiModule;
 async function getAI() {
+  if (cloud) return { ai: cloudAI, describe: describeError };
   if (!apiKey) return null;
-  aiModule ||= await import("./ai.js");
-  return { ai: new aiModule.RiskAI({ apiKey, model: settings.model, effort: settings.effort }), describe: aiModule.describeError };
+  return { ai: new LocalAI({ apiKey, model: settings.model, effort: settings.effort }), describe: describeError };
 }
+
+// Refreshes the usage meter after an AI call in cloud mode.
+const afterAI = () => workspaceApi?.refreshUsage();
 
 function registerSummary() {
   return JSON.stringify({ risks: riskSummary(), vendors: vendorsApi.summary() }, null, 1);
@@ -124,6 +139,12 @@ function riskSummary() {
 
 function updateAiStatus() {
   const el = $("#ai-status");
+  if (cloud) {
+    el.textContent = "AI: on";
+    el.className = "pill ok";
+    el.title = "Claude runs on the RiskPilot server";
+    return;
+  }
   el.textContent = apiKey ? `AI: ${settings.model}` : "AI: offline mode";
   el.className = `pill ${apiKey ? "ok" : "warn"}`;
   el.title = apiKey ? "Claude is connected" : "Add an API key in Settings for Claude-powered analysis";
@@ -280,6 +301,7 @@ $("#btn-delete").addEventListener("click", () => {
 
 form.addEventListener("submit", (e) => {
   e.preventDefault();
+  if (!canEdit()) return;
   const data = Object.fromEntries(new FormData(form));
   for (const k of ["likelihood", "impact", "residualLikelihood", "residualImpact"]) {
     data[k] = Math.min(5, Math.max(1, Number(data[k]) || 1));
@@ -306,8 +328,9 @@ $("#btn-ai-assess").addEventListener("click", async () => {
     const ctx = await getAI();
     const result = ctx ? await ctx.ai.assessRisk(data) : assessOffline(data);
     showAssessment(result, !ctx);
+    if (ctx) afterAI();
   } catch (err) {
-    const msg = aiModule ? aiModule.describeError(err) : err.message;
+    const msg = describeError(err);
     panel.innerHTML = `<p class="error-text">AI assessment failed: ${escapeHtml(msg)}</p>`;
   } finally {
     btn.disabled = false;
@@ -346,7 +369,7 @@ function showAssessment(a, offline) {
 let lastReport = null;
 
 function showReport(ai) {
-  lastReport = { risks: riskSummary(), vendors: vendorsApi.summary(), ai, generatedAt: new Date().toISOString(), title: settings.orgName || "RiskPilot" };
+  lastReport = { risks: riskSummary(), vendors: vendorsApi.summary(), ai, generatedAt: new Date().toISOString(), title: orgName() || "RiskPilot" };
   $("#report").innerHTML = renderReport(lastReport);
   $("#btn-print-report").classList.remove("hidden");
   $("#btn-copy-report").classList.remove("hidden");
@@ -366,7 +389,8 @@ $("#btn-report").addEventListener("click", async () => {
   btn.innerHTML = `<span class="spinner"></span> Writing briefing…`;
   out.innerHTML = `<div class="rh-loading"><div class="spinner"></div><p>Claude is analysing ${risks.length} risks and ${vendorsApi.all().length} vendors. This usually takes under a minute.</p></div>`;
   try {
-    showReport(await ctx.ai.structured(reportPrompt(registerSummary()), REPORT_SCHEMA));
+    showReport(await ctx.ai.briefing(reportPrompt(registerSummary())));
+    afterAI();
   } catch (err) {
     out.innerHTML = `<p class="error-text">Briefing failed: ${escapeHtml(ctx.describe(err))}</p>`;
   } finally {
@@ -432,6 +456,7 @@ $("#chat-form").addEventListener("submit", async (e) => {
     });
     bubble.innerHTML = renderMarkdown(text);
     chatHistory.push({ role: "assistant", content: text });
+    afterAI();
   } catch (err) {
     chatHistory.pop();
     bubble.innerHTML = `<span class="error-text">${escapeHtml(ctx.describe(err))}</span>`;
@@ -459,6 +484,7 @@ $("#btn-save-settings").addEventListener("click", () => {
 });
 
 $("#btn-sample").addEventListener("click", async () => {
+  if (!canEdit()) return;
   if ((risks.length || vendorsApi.all().length) && !confirm("Add sample risks and vendors to your existing data?")) return;
   const { SAMPLE_RISKS, SAMPLE_VENDORS } = await import("./sample-data.js");
   for (const r of SAMPLE_RISKS) risks.push({ ...r, id: nextId(), created: new Date().toISOString() });
@@ -468,7 +494,10 @@ $("#btn-sample").addEventListener("click", async () => {
   showView("dashboard");
 });
 $("#btn-clear").addEventListener("click", () => {
-  if (!confirm("Delete ALL risks and vendors? Export JSON first if you need a backup.")) return;
+  if (cloud && cloud.org.role !== "owner") return;
+  const where = cloud ? `the ${cloud.org.name} workspace` : "this browser";
+  if (!confirm(`Delete ALL risks and vendors in ${where}? Export JSON first if you need a backup.`)) return;
+  if (cloud && prompt(`Type the workspace name (${cloud.org.name}) to confirm`) !== cloud.org.name) return;
   risks = [];
   vendorsApi.replaceAll([]);
   saveRisks();
@@ -487,17 +516,21 @@ $("#btn-export-json").addEventListener("click", () => {
 });
 $("#import-json").addEventListener("change", async (e) => {
   const file = e.target.files[0];
-  if (!file) return;
+  if (!file || !canEdit()) return;
+  if (file.size > 25 * 1024 * 1024) { e.target.value = ""; return toast("That file is too large to import", true); }
   try {
     const parsed = JSON.parse(await file.text());
     // Accepts a plain array of risks (older exports) or a { risks, vendors } backup.
     const data = Array.isArray(parsed) ? parsed : parsed.risks;
     if (!Array.isArray(data)) throw new Error("Expected an array of risks or a RiskPilot backup");
-    const newVendors = Array.isArray(parsed.vendors) ? parsed.vendors.filter((v) => v.name) : [];
+    if (data.length > 5000) throw new Error("Too many records in one file");
+    // Only known fields are kept and strings are length-capped (see store.js).
+    const newVendors = Array.isArray(parsed.vendors) ? parsed.vendors.filter((v) => typeof v?.name === "string").map((v) => sanitizeRecord("vendors", v)) : [];
     if (newVendors.length) vendorsApi.addMany(newVendors);
-    for (const r of data) {
-      if (!r.title) continue;
-      const id = r.id && !risks.some((x) => x.id === r.id) ? r.id : nextId();
+    for (const raw of data) {
+      if (typeof raw?.title !== "string") continue;
+      const r = sanitizeRecord("risks", raw);
+      const id = ID_PATTERN.risks.test(r.id) && !risks.some((x) => x.id === r.id) ? r.id : nextId();
       risks.push({ ...r, id });
     }
     saveRisks();
@@ -516,11 +549,61 @@ function addRegisterRisk(risk) {
   return id;
 }
 
-const vendorsApi = initVendors({
-  $, $$, escapeHtml, toast, download, safeGet, safeSet, getAI, addRegisterRisk,
-  getOrgName: () => settings.orgName,
-  onChange: renderDashboard,
-});
+// ---------- start-up ----------
+function applyRoleUI() {
+  document.body.classList.toggle("read-only", !canEdit());
+  document.body.classList.toggle("not-owner", !!cloud && cloud.org.role !== "owner");
+  document.body.classList.toggle("cloud", !!cloud);
+}
 
-loadSettingsForm();
-render();
+async function loadData() {
+  const data = await store.load();
+  risks = data.risks;
+  return data;
+}
+
+async function boot() {
+  const data = await loadData();
+  vendorsApi = initVendors({
+    $, $$, escapeHtml, toast, download, getAI, addRegisterRisk,
+    initial: data.vendors,
+    persist: (list) => store.save("vendors", list),
+    getOrgName: orgName,
+    onChange: renderDashboard,
+  });
+  applyRoleUI();
+  loadSettingsForm();
+  render();
+}
+
+// When a save is rejected (e.g. a role change or a concurrent edit), reload the server's data.
+async function onSaveError(err) {
+  toast(`Couldn't save your change: ${err.message}. Reloading the latest data.`, true);
+  const data = await loadData();
+  vendorsApi.reload(data.vendors);
+  render();
+}
+
+if (SUPABASE_URL) {
+  const { startAuth, signOut, switchWorkspace } = await import("./auth.js");
+  $("#local-settings").classList.add("hidden");
+  $("#data-note").textContent = "Data is stored in your organisation's workspace, protected by role-based access, and every change is recorded in the audit log.";
+  startAuth(async (ctx) => {
+    cloud = ctx;
+    store = new CloudStore({ client: ctx.client, orgId: ctx.org.id, onError: onSaveError });
+    cloudAI = new CloudAI({ client: ctx.client, url: ctx.url, anonKey: ctx.anonKey, orgId: ctx.org.id });
+    $("#user-menu").classList.remove("hidden");
+    $("#ws-label").textContent = `${ctx.org.name} · ${ctx.org.role}`;
+    $("#btn-signout").addEventListener("click", () => signOut());
+    $("#btn-switch-ws").addEventListener("click", switchWorkspace);
+    await boot();
+    const { initWorkspace } = await import("./workspace.js");
+    workspaceApi = initWorkspace({
+      $, escapeHtml, toast, download, ctx, signOut,
+      onRenamed: (name) => { $("#ws-label").textContent = `${name} · ${ctx.org.role}`; },
+    });
+  });
+} else {
+  store = new LocalStore({ safeGet, safeSet });
+  await boot();
+}

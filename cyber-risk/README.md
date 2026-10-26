@@ -35,16 +35,40 @@ python3 -m http.server 8000
 
 Then go to **Settings**, paste an Anthropic API key, and optionally **Load sample data**.
 
+## Two modes
+
+| | **Hosted (production)** | **Demo** |
+|---|---|---|
+| Turned on by | `SUPABASE_URL` / `SUPABASE_ANON_KEY` in `config.js` | leaving them empty |
+| Sign-in | Email + password with mandatory authenticator-app MFA | none |
+| Data | Supabase PostgreSQL, one isolated workspace per customer, row-level security | this browser's `localStorage` |
+| Users | Owner / Admin / Analyst / Viewer roles, invitations, audit log | single user |
+| AI | Server-side function with the API key as a secret, per-workspace quotas and usage logging | the user's own key, called from the browser |
+
+Set up hosting with [`docs/deploy.md`](../docs/deploy.md). Security controls are described in [`SECURITY.md`](../SECURITY.md).
+
 ## How the AI works
 
-`ai.js` uses the official Anthropic TypeScript SDK (loaded from jsDelivr) directly in the browser:
+- Every AI task (risk assessment, vendor review, briefing, document fill, chat) is defined once in `ai-tasks.js`: its system prompt, structured-output JSON schema, token limit and the minimum role allowed to run it. The server function uses the same file (copied to `supabase/functions/_shared/`), so clients choose a task but can't change its instructions.
+- Model `claude-opus-5-5` by default, with structured outputs so results are always well-formed, streaming to avoid timeouts, and server-side refusal fallbacks (`fallbacks: "default"`), since security topics can occasionally trip safety classifiers.
+- In hosted mode the browser calls `supabase/functions/ai`, which checks the session, MFA, role, rate limit and monthly quota before calling Claude, then records token usage.
 
-- Model defaults to `claude-opus-5-5` (Sonnet 5.5 and Haiku 5.5 selectable), with an adjustable effort level.
-- Risk assessments use structured outputs (`output_config.format` with a JSON schema) so results are always well-formed.
-- Reports and chat are streamed.
-- Server-side refusal fallbacks (`fallbacks: "default"`) are enabled, since security topics can occasionally trip safety classifiers; a remaining refusal is shown as an error.
+## Code map
+
+| Path | Purpose |
+|---|---|
+| `index.html`, `app.js`, `styles.css` | App shell, dashboard, risk register, AI analyst, settings |
+| `auth.js` | Sign-in, sign-up, password reset, MFA enrolment and challenge, workspace selection, idle timeout |
+| `store.js` | Saves risks and vendors to `localStorage` or Supabase (diff-based), and sanitises records |
+| `workspace.js` | Members, roles, invitations, AI usage, audit log |
+| `ai.js`, `ai-tasks.js` | AI clients (cloud and demo) and the shared task definitions |
+| `vendors.js`, `intake*.{html,js}`, `intake-questions.js`, `autofill.js` | Vendor risk, intake questionnaire, document fill |
+| `report.js` | Executive briefing |
+| `vendor/` | Pinned third-party libraries (see `vendor/README.md`) |
+| `_headers`, `.well-known/security.txt` | Security headers and vulnerability contact for production hosting |
+| `../supabase/` | Database migrations, security tests, AI server function |
 
 ## Privacy and security notes
 
-- Risks and vendors are stored in your browser's `localStorage`; nothing is sent anywhere except to `api.anthropic.com` when you use an AI feature (the register and vendor inventory are included as context for reports and chat). **Export JSON** saves a backup of both.
-- The API key is kept in `sessionStorage` by default, or `localStorage` if you tick “Remember”. Calling the API from the browser exposes the key to anyone with access to that browser, so use a dedicated key with a spend limit and avoid shared machines. For a multi-user deployment, move the AI calls behind a small backend that holds the key.
+- **Hosted mode:** see [`SECURITY.md`](../SECURITY.md). In short: mandatory MFA, row-level security enforcing workspace isolation and roles, an append-only audit log, the AI key kept server-side, a strict Content Security Policy and pinned dependencies.
+- **Demo mode:** risks and vendors stay in this browser's `localStorage`, and AI features send the register to `api.anthropic.com` with your own key. The key is kept in `sessionStorage` by default, or `localStorage` if you tick “Remember”. Use a dedicated key with a spend limit and avoid shared machines. Don't use demo mode for real customer data.

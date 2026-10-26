@@ -2,9 +2,8 @@
 // tiering, review scheduling and Claude-powered due diligence.
 import { assessVendorOffline } from "./heuristics.js";
 import { INTAKE_QUESTIONS, INTAKE_FORMAT, INTAKE_VERSION, summarizeIntake, deriveControlAnswers, validateIntake } from "./intake-questions.js";
-import { addDocuments, toDocumentBlocks, AUTOFILL_SCHEMA, AUTOFILL_SYSTEM, autofillPrompt } from "./autofill.js";
+import { addDocuments, autofillPrompt } from "./autofill.js";
 
-export const VENDOR_STORE_KEY = "riskpilot.vendors";
 
 const LEVELS = ["Low", "Medium", "High", "Critical"];
 const CRITICALITY = { Low: 1, Medium: 2, High: 3, Critical: 4 };
@@ -32,32 +31,6 @@ export const QUESTIONS = [
 ];
 const ANSWER_VALUE = { Yes: 1, Partial: 0.5, No: 0 };
 
-const VENDOR_SCHEMA = {
-  type: "object",
-  properties: {
-    risk_tier: { type: "string", enum: LEVELS },
-    recommendation: { type: "string", enum: ["Approve", "Approve with conditions", "Needs more information", "Reject"] },
-    summary: { type: "string" },
-    strengths: { type: "array", items: { type: "string" } },
-    gaps: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          gap: { type: "string" },
-          severity: { type: "string", enum: ["High", "Medium", "Low"] },
-          remediation: { type: "string" },
-        },
-        required: ["gap", "severity", "remediation"],
-        additionalProperties: false,
-      },
-    },
-    contract_clauses: { type: "array", items: { type: "string" } },
-    follow_up_questions: { type: "array", items: { type: "string" } },
-  },
-  required: ["risk_tier", "recommendation", "summary", "strengths", "gaps", "contract_clauses", "follow_up_questions"],
-  additionalProperties: false,
-};
 
 // ---------- scoring ----------
 export function inherentTier(v) {
@@ -107,13 +80,12 @@ export function isOverdue(v) {
 const tierClass = (t) => ({ Low: "low", Medium: "medium", High: "high", Critical: "critical" }[t]);
 
 // ---------- module ----------
-export function initVendors({ $, $$, escapeHtml, toast, download, safeGet, safeSet, getAI, getOrgName, addRegisterRisk, onChange }) {
-  let vendors = [];
-  try { vendors = JSON.parse(safeGet(localStorage, VENDOR_STORE_KEY) || "[]"); } catch { vendors = []; }
+export function initVendors({ $, $$, escapeHtml, toast, download, initial, persist, getAI, getOrgName, addRegisterRisk, onChange }) {
+  let vendors = initial || [];
   let sortKey = "residual", sortDir = -1;
 
   const save = () => {
-    safeSet(localStorage, VENDOR_STORE_KEY, JSON.stringify(vendors));
+    persist(vendors);
     render();
     onChange();
   };
@@ -331,11 +303,7 @@ export function initVendors({ $, $$, escapeHtml, toast, download, safeGet, safeS
     btn.disabled = true;
     btn.innerHTML = `<span class="spinner"></span> Reading documents… (1–3 min)`;
     try {
-      const result = await ctx.ai.documentTask({
-        system: AUTOFILL_SYSTEM,
-        content: [...toDocumentBlocks(intakeDocs), { type: "text", text: autofillPrompt(name) }],
-        schema: AUTOFILL_SCHEMA,
-      });
+      const result = await ctx.ai.fillFromDocuments(intakeDocs, autofillPrompt(name));
       const { filled, conflicts, unknown } = applyAiFill(result, name);
       renderIntake();
       toast(`Filled ${filled} answer(s) from the documents${conflicts ? `; ${conflicts} disagree with the vendor` : ""}${unknown ? `; ${unknown} not covered` : ""}. Review them, then click Save.`);
@@ -488,7 +456,7 @@ export function initVendors({ $, $$, escapeHtml, toast, download, safeGet, safeS
     btn.disabled = true;
     try {
       const ctx = await getAI();
-      const result = ctx ? await ctx.ai.structured(vendorPrompt(v), VENDOR_SCHEMA) : assessVendorOffline(v, QUESTIONS);
+      const result = ctx ? await ctx.ai.vendorReview(vendorPrompt(v)) : assessVendorOffline(v, QUESTIONS);
       pendingAssessment = { ...result, offline: !ctx, at: new Date().toISOString() };
       if (!form.elements.lastAssessed.value) form.elements.lastAssessed.value = new Date().toISOString().slice(0, 10);
       showAssessment(pendingAssessment);
@@ -589,6 +557,8 @@ ${pendingIntake.aiFill ? `Documents reviewed: ${pendingIntake.aiFill.documents.m
       save();
     },
     replaceAll(list) { vendors = list; save(); },
+    // Replaces the list with data just loaded from storage, without saving it back.
+    reload(list) { vendors = list; render(); onChange(); },
     summary: () => vendors.map((v) => ({
       id: v.id, name: v.name, service: v.service, criticality: v.criticality, dataSensitivity: v.dataSensitivity,
       access: v.access, status: v.status, inherentTier: inherentTier(v), controlScore: controlScore(v),
