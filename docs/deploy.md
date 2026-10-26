@@ -1,6 +1,6 @@
-# Deploying RiskPilot as a hosted service
+# Deploying Posture.ai as a hosted service
 
-This sets up RiskPilot for multiple customers with sign-in, MFA, isolated workspaces and server-side AI. It takes about an hour. You need accounts with [Supabase](https://supabase.com), [Cloudflare](https://dash.cloudflare.com/sign-up) and [Anthropic](https://platform.claude.com).
+This sets up Posture.ai for multiple customers with sign-in, MFA, isolated workspaces and server-side AI. It takes about an hour. You need accounts with [Supabase](https://supabase.com), [Cloudflare](https://dash.cloudflare.com/sign-up) and [Anthropic](https://platform.claude.com).
 
 Without these steps the app runs in **demo mode** (data in the browser, your own API key), which is fine for trying it out but not for customers.
 
@@ -41,7 +41,7 @@ In the Anthropic Console, create a **dedicated API key** for production and set 
 
 ## 4. Point the app at Supabase
 
-In `cyber-risk/config.js`, set your project's URL and **anon** (public) key from **Project Settings → API**:
+In `config.js`, set your project's URL and **anon** (public) key from **Project Settings → API**:
 
 ```js
 export const SUPABASE_URL = "https://<project-ref>.supabase.co";
@@ -50,16 +50,16 @@ export const SUPABASE_ANON_KEY = "<anon key>";
 
 The anon key is meant to be public: it can only do what the row-level security policies allow. **Never put the service-role key in the app.**
 
-If you use a custom Supabase domain, add it to `connect-src` in `cyber-risk/_headers` and in the Content-Security-Policy meta tag in `cyber-risk/index.html`.
+If you use a custom Supabase domain, add it to `connect-src` in `_headers` and in the Content-Security-Policy meta tag in `index.html`.
 
 ## 5. Host on Cloudflare Pages
 
 1. In Cloudflare, go to **Workers & Pages → Create → Pages → Connect to Git** and pick this repository.
-2. Build settings: **Framework preset** None, **Build command** empty, **Build output directory** `cyber-risk`.
+2. Build settings: **Framework preset** None, **Build command** empty, **Build output directory** `/` (the repository root). The `supabase/`, `docs/` and `.github/` folders are also served as files; they contain no secrets, but you can remove them from the deployment with a build step if you prefer.
 3. Deploy, then add your custom domain (e.g. `app.yourcompany.com`) under **Custom domains**.
-4. Check the security headers from `cyber-risk/_headers` are being sent, e.g. with `curl -I https://app.yourcompany.com` or [securityheaders.com](https://securityheaders.com).
+4. Check the security headers from `_headers` are being sent, e.g. with `curl -I https://app.yourcompany.com` or [securityheaders.com](https://securityheaders.com).
 
-Then turn off GitHub Pages for the repository (Settings → Pages) so there's only one public copy of the app, and update `cyber-risk/.well-known/security.txt` with your security contact.
+Then turn off GitHub Pages for the repository (Settings → Pages) so there's only one public copy of the app, and update `.well-known/security.txt` with your security contact.
 
 ## 6. Go-live checklist
 
@@ -87,4 +87,4 @@ These also run automatically in GitHub Actions (`.github/workflows/security-test
 
 ## Changing the AI task definitions
 
-Edit `cyber-risk/ai-tasks.js`, copy it to `supabase/functions/_shared/ai-tasks.js`, and redeploy the function (`supabase functions deploy ai`). CI fails if the two copies differ.
+Edit `ai-tasks.js`, copy it to `supabase/functions/_shared/ai-tasks.js`, and redeploy the function (`supabase functions deploy ai`). CI fails if the two copies differ.

@@ -1,4 +1,4 @@
--- Security tests for the RiskPilot schema. Run with: supabase/tests/run.sh
+-- Security tests for the Posture.ai schema. Run with: supabase/tests/run.sh
 \set ON_ERROR_STOP on
 \set QUIET on
 

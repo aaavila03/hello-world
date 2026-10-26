@@ -6,7 +6,7 @@ import { addDocuments } from "./autofill.js";
 // Clickjacking defence for hosts that can't send a frame-ancestors header.
 if (window.top !== window.self) {
   document.documentElement.innerHTML = "";
-  throw new Error("RiskPilot cannot be embedded in another site.");
+  throw new Error("Posture.ai cannot be embedded in another site.");
 }
 
 const $ = (sel, root = document) => root.querySelector(sel);

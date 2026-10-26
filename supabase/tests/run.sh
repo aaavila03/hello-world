@@ -3,7 +3,7 @@
 # Usage: PGHOST=... PGPORT=... PGUSER=postgres supabase/tests/run.sh
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
-db="riskpilot_test_$$"
+db="posture_test_$$"
 createdb "$db"
 trap 'dropdb --if-exists "$db"' EXIT
 psql -q -v ON_ERROR_STOP=1 -d "$db" -f "$here/auth_stub.sql" >/dev/null

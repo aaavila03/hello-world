@@ -1,7 +1,7 @@
-# Supabase project configuration for RiskPilot (used by the Supabase CLI for
+# Supabase project configuration for Posture.ai (used by the Supabase CLI for
 # local development; mirror the [auth] settings in the hosted project's
 # dashboard under Authentication – see docs/deploy.md).
-project_id = "riskpilot"
+project_id = "posture-ai"
 
 [api]
 # Only the public schema is exposed through the API; helper functions live in "private".
@@ -11,7 +11,7 @@ max_rows = 1000
 
 [auth]
 site_url = "https://app.example.com"
-additional_redirect_urls = ["http://localhost:8000/cyber-risk/"]
+additional_redirect_urls = ["http://localhost:8000/"]
 # Short-lived access tokens; refresh tokens rotate and are single use.
 jwt_expiry = 3600
 enable_refresh_token_rotation = true

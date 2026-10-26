@@ -1,8 +1,8 @@
-# RiskPilot security overview
+# Posture.ai security overview
 
-This document describes how RiskPilot protects customer data. It is written for customers' security and procurement teams and reflects the controls implemented in this repository. Items marked **Planned** are on the roadmap and not yet in place.
+This document describes how Posture.ai protects customer data. It is written for customers' security and procurement teams and reflects the controls implemented in this repository. Items marked **Planned** are on the roadmap and not yet in place.
 
-To report a vulnerability, email the address in [`/.well-known/security.txt`](cyber-risk/.well-known/security.txt). We aim to acknowledge reports within two business days.
+To report a vulnerability, email the address in [`/.well-known/security.txt`](.well-known/security.txt). We aim to acknowledge reports within two business days.
 
 ## Architecture
 
@@ -46,18 +46,18 @@ Every create, update and delete of risks, vendors, members, invitations and work
 
 - AI requests go to a server-side function that verifies the user's session, MFA status and workspace role, applies a per-user rate limit and a monthly per-workspace quota, and records token usage.
 - The function only runs a fixed set of tasks. Their system prompts, output schemas, models and token limits are defined server-side, so a user can't repurpose it as a general AI proxy or change the instructions.
-- Uploaded vendor documents are validated (type, count, size), sent to Anthropic only to answer the request, and not stored by RiskPilot. Document content is treated as untrusted data in prompts.
+- Uploaded vendor documents are validated (type, count, size), sent to Anthropic only to answer the request, and not stored by Posture.ai. Document content is treated as untrusted data in prompts.
 - Under Anthropic's commercial terms, API inputs and outputs are not used to train models. Anthropic is a subprocessor (see below).
 - Errors returned to users never include upstream details or secrets.
 
 ## Application security
 
-- **Content Security Policy:** scripts only from RiskPilot's own origin (no third-party CDNs and no inline scripts), connections only to RiskPilot and its database, no plug-ins, frames or form posts elsewhere. Automated tests confirm that injected inline scripts, external scripts and data exfiltration attempts are blocked.
+- **Content Security Policy:** scripts only from Posture.ai's own origin (no third-party CDNs and no inline scripts), connections only to Posture.ai and its database, no plug-ins, frames or form posts elsewhere. Automated tests confirm that injected inline scripts, external scripts and data exfiltration attempts are blocked.
 - **Clickjacking:** `frame-ancestors 'none'`, `X-Frame-Options: DENY`, plus a script guard for hosts that can't send headers.
 - **Other headers:** `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, a restrictive `Permissions-Policy`, and cross-origin opener and resource policies.
 - **Output encoding:** all user- and AI-supplied text is HTML-escaped before display.
 - **Input validation:** imported files and records are restricted to known fields, with length, size and count limits; the database enforces size limits and ID formats.
-- **Supply chain:** third-party libraries are pinned to exact versions, served from RiskPilot's own origin, and checked against recorded SHA-256 hashes in CI. Neither library uses `eval`.
+- **Supply chain:** third-party libraries are pinned to exact versions, served from Posture.ai's own origin, and checked against recorded SHA-256 hashes in CI. Neither library uses `eval`.
 
 ## Subprocessors
 

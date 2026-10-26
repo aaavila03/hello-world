@@ -1,4 +1,4 @@
--- RiskPilot multi-tenant schema.
+-- Posture.ai multi-tenant schema.
 --
 -- Security model
 --   * Every business table carries org_id and is protected by row-level security.

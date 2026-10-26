@@ -1,5 +1,5 @@
 # Security headers for Cloudflare Pages (also understood by Netlify).
-# Deploy the cyber-risk/ folder as the site root so these apply; see docs/deploy.md.
+# Applies when the repository is deployed to Cloudflare Pages; see docs/deploy.md.
 # The CSP here is stricter than the one in the HTML: in production the browser
 # never talks to api.anthropic.com directly (AI runs in the server function).
 # If you use a custom Supabase domain, add it to connect-src.
