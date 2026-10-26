@@ -1,6 +1,7 @@
 // Persistence for risks and vendors: browser storage in demo mode, or the
 // Supabase database (protected by row-level security) in cloud mode.
 
+// Storage keys keep the original "riskpilot." prefix so existing browser data still loads.
 const LOCAL_KEYS = { risks: "riskpilot.risks", vendors: "riskpilot.vendors" };
 
 // Fields that may be stored for each record; anything else (e.g. from an

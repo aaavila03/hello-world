@@ -1,90 +1,74 @@
-# Welcome to GitHub
+# Posture.ai – AI cyber risk manager
 
-Welcome to GitHub—where millions of developers work together on software. Ready to get started? Let’s learn how this all works by building and publishing your first GitHub Pages website!
+A browser-only cyber risk management app with Claude-powered analysis. No build step or server: it runs on GitHub Pages (or any static host).
 
-## Repositories
+## Features
 
-Right now, we’re in your first GitHub **repository**. A repository is like a folder or storage space for your project. Your project's repository contains all its files such as code, documentation, images, and more. It also tracks every change that you—or your collaborators—make to each file, so you can always go back to previous versions of your project if you make any mistakes.
+- **Dashboard** – KPIs (active, critical, high, average inherent/residual score, overdue actions), a clickable 5×5 likelihood × impact heat map, top risks and a category breakdown.
+- **Risk register** – add, edit, delete, search, filter and sort risks; inherent and residual scoring; owner, status, treatment, controls and due date. Export to CSV/JSON and import from JSON.
+- **✨ AI assess** – in the risk editor, Claude scores likelihood/impact, suggests a category, writes threat scenarios, and recommends prioritised controls mapped to NIST CSF 2.0 functions, plus an estimated residual score. One click applies it to the form.
+- **Vendor risk assessment** – a third-party inventory with:
+  - an inherent tier from business criticality, data sensitivity and access level;
+  - a 15-question security questionnaire across governance, access control, data protection, operations, incident response, resilience and supply chain, giving a weighted control score (unanswered questions count as not demonstrated, N/A is excluded);
+  - a residual tier (up to two levels below inherent, never below Medium if a key control – MFA, encryption, breach notification – is missing);
+  - review scheduling by inherent tier (Critical 6 months, High 12, Medium 24, Low 36) with overdue flags;
+  - **✨ AI vendor review** – Claude reads the profile, answers and pasted evidence (e.g. a SOC 2 summary) and returns a risk tier, Approve / Approve with conditions / Needs more information / Reject, strengths, prioritised gaps with remediation, contract clauses to require and follow-up questions to send the vendor;
+  - one click to raise a Third-Party risk in the register, and CSV export.
+- **Vendor intake questionnaire** (`intake.html`) – a vendor-facing security questionnaire in the style of short-form industry questionnaires such as SIG Lite (original content, not the licensed Shared Assessments SIG):
+  - a company profile (contacts, services, data types, hosting and data locations, certifications, subprocessors) and 84 Yes / No / N/A questions with comments across 19 domains: governance, assurance, HR, assets, identity & access, data protection, privacy, application security, vulnerability management, endpoint, network, cloud, logging, incident management, resilience, physical security, subcontractors, compliance & insurance and AI;
+  - progress tracking, autosave in the vendor's browser, prompts for comments on unfavourable answers, an attestation, and Print / Save as PDF;
+  - the vendor downloads a response file and emails it back. In the vendor editor, **Copy link for vendor** creates a pre-filled link and **Import response** loads the file: it shows an intake score and the answers needing attention, fills in the 15-control questionnaire (all mapped answers Yes → Yes, all No → No, mixed → Partial), raises data sensitivity to match the declared data types, and gives the full response to the AI vendor review.
+  - **Documentation instead of answers** – vendors can attach up to 5 documents (SOC 2 report, ISO certificate, policies, whitepaper, a previous questionnaire; PDF, TXT, Markdown or CSV, 20 MB total). They're embedded in the response file, and the vendor may leave questions the documents cover unanswered.
+  - **✨ Fill from documents** (in the vendor editor, using your own API key) – Claude reads the attached documents, or ones you add with **Add documents** when a vendor emails documentation instead of a questionnaire, and fills the unanswered questions, each with a supporting quote and source file. It never overwrites the vendor's own answers: where the documents contradict one, it's listed as a disagreement. You can review and change every AI-filled answer before saving, and the AI vendor review is told which answers came from the vendor, from Claude or from you. Documents are held in memory only (browser storage is too small for them); re-import the response file to use them again.
+- **Executive briefing** – a designed, board-ready briefing: a cover with the overall posture and a one-line headline, KPI tiles, inherent vs residual heat maps, a risk-reduction chart (inherent → residual per risk), top-risk cards with why each matters and the recommended action, systemic themes, risks by category, third-party risk with vendors by tier, a three-phase 90-day roadmap with owners, and scores worth revisiting. Every number and chart is calculated from the register; Claude writes the narrative as structured data. Without an API key you still get the data-only briefing. **Print / save PDF** prints just the briefing, and **Copy as text** gives a Markdown version for email. Set your organisation name in Settings to brand the briefing (it's also shown on vendor questionnaire links).
+- **Ask the analyst** – a chat assistant that answers questions with your register and vendors as context.
+- **Offline mode** – without an API key, rule-based heuristics still give baseline risk and vendor assessments.
 
-This repository contains three important files: The HTML code for your first website on GitHub, the CSS stylesheet that decorates your website with colors and fonts, and the **README** file. It also contains an image folder, with one image file.
+## Running
 
-## Describe your project
+Open `index.html` through any static server, e.g.
 
-You are currently viewing your project's **README** file. **_README_** files are like cover pages or elevator pitches for your project. They are written in plain text or [Markdown language](https://guides.github.com/features/mastering-markdown/), and usually include a paragraph describing the project, directions on how to use it, who authored it, and more.
-
-[Learn more about READMEs](https://help.github.com/en/articles/about-readmes)
-
-## Your first website
-
-**GitHub Pages** is a free and easy way to create a website using the code that lives in your GitHub repositories. You can use GitHub Pages to build a portfolio of your work, create a personal website, or share a fun project that you coded with the world. GitHub Pages is automatically enabled in this repository, but when you create new repositories in the future, the steps to launch a GitHub Pages website will be slightly different.
-
-[Learn more about GitHub Pages](https://pages.github.com/)
-
-## Rename this repository to publish your site
-
-We've already set-up a GitHub Pages website for you, based on your personal username. This repository is called `hello-world`, but you'll rename it to: `username.github.io`, to match your website's URL address. If the first part of the repository doesn’t exactly match your username, it won’t work, so make sure to get it right.
-
-Let's get started! To update this repository’s name, click the `Settings` tab on this page. This will take you to your repository’s settings page. 
-
-![repo-settings-image](https://user-images.githubusercontent.com/18093541/63130482-99e6ad80-bf88-11e9-99a1-d3cf1660b47e.png)
-
-Under the **Repository Name** heading, type: `username.github.io`, where username is your username on GitHub. Then click **Rename**—and that’s it. When you’re done, click your repository name or browser’s back button to return to this page.
-
-<img width="1039" alt="rename_screenshot" src="https://user-images.githubusercontent.com/18093541/63129466-956cc580-bf85-11e9-92d8-b028dd483fa5.png">
-
-Once you click **Rename**, your website will automatically be published at: https://your-username.github.io/. The HTML file—called `index.html`—is rendered as the home page and you'll be making changes to this file in the next step.
-
-Congratulations! You just launched your first GitHub Pages website. It's now live to share with the entire world
-
-## Making your first edit
-
-When you make any change to any file in your project, you’re making a **commit**. If you fix a typo, update a filename, or edit your code, you can add it to GitHub as a commit. Your commits represent your project’s entire history—and they’re all saved in your project’s repository.
-
-With each commit, you have the opportunity to write a **commit message**, a short, meaningful comment describing the change you’re making to a file. So you always know exactly what changed, no matter when you return to a commit.
-
-## Practice: Customize your first GitHub website by writing HTML code
-
-Want to edit the site you just published? Let’s practice commits by introducing yourself in your `index.html` file. Don’t worry about getting it right the first time—you can always build on your introduction later.
-
-Let’s start with this template:
-
-```
-<p>Hello World! I’m [username]. This is my website!</p>
+```bash
+python3 -m http.server 8000
+# then visit http://localhost:8000/
 ```
 
-To add your introduction, copy our template and click the edit pencil icon at the top right hand corner of the `index.html` file.
+Then go to **Settings**, paste an Anthropic API key, and optionally **Load sample data**.
 
-<img width="997" alt="edit-this-file" src="https://user-images.githubusercontent.com/18093541/63131820-0794d880-bf8d-11e9-8b3d-c096355e9389.png">
+## Two modes
 
+| | **Hosted (production)** | **Demo** |
+|---|---|---|
+| Turned on by | `SUPABASE_URL` / `SUPABASE_ANON_KEY` in `config.js` | leaving them empty |
+| Sign-in | Email + password with mandatory authenticator-app MFA | none |
+| Data | Supabase PostgreSQL, one isolated workspace per customer, row-level security | this browser's `localStorage` |
+| Users | Owner / Admin / Analyst / Viewer roles, invitations, audit log | single user |
+| AI | Server-side function with the API key as a secret, per-workspace quotas and usage logging | the user's own key, called from the browser |
 
-Delete this placeholder line:
+Set up hosting with [`docs/deploy.md`](docs/deploy.md). Security controls are described in [`SECURITY.md`](SECURITY.md).
 
-```
-<p>Welcome to your first GitHub Pages website!</p>
-```
+## How the AI works
 
-Then, paste the template to line 15 and fill in the blanks.
+- Every AI task (risk assessment, vendor review, briefing, document fill, chat) is defined once in `ai-tasks.js`: its system prompt, structured-output JSON schema, token limit and the minimum role allowed to run it. The server function uses the same file (copied to `supabase/functions/_shared/`), so clients choose a task but can't change its instructions.
+- Model `claude-opus-5-5` by default, with structured outputs so results are always well-formed, streaming to avoid timeouts, and server-side refusal fallbacks (`fallbacks: "default"`), since security topics can occasionally trip safety classifiers.
+- In hosted mode the browser calls `supabase/functions/ai`, which checks the session, MFA, role, rate limit and monthly quota before calling Claude, then records token usage.
 
-<img width="1032" alt="edit-githuboctocat-index" src="https://user-images.githubusercontent.com/18093541/63132339-c3a2d300-bf8e-11e9-8222-59c2702f6c42.png">
+## Code map
 
+| Path | Purpose |
+|---|---|
+| `index.html`, `app.js`, `styles.css` | App shell, dashboard, risk register, AI analyst, settings |
+| `auth.js` | Sign-in, sign-up, password reset, MFA enrolment and challenge, workspace selection, idle timeout |
+| `store.js` | Saves risks and vendors to `localStorage` or Supabase (diff-based), and sanitises records |
+| `workspace.js` | Members, roles, invitations, AI usage, audit log |
+| `ai.js`, `ai-tasks.js` | AI clients (cloud and demo) and the shared task definitions |
+| `vendors.js`, `intake*.{html,js}`, `intake-questions.js`, `autofill.js` | Vendor risk, intake questionnaire, document fill |
+| `report.js` | Executive briefing |
+| `vendor/` | Pinned third-party libraries (see `vendor/README.md`) |
+| `_headers`, `.well-known/security.txt` | Security headers and vulnerability contact for production hosting |
+| `supabase/` | Database migrations, security tests, AI server function |
 
-When you’re done, scroll down to the `Commit changes` section near the bottom of the edit page. Add a short message explaining your change, like "Add my introduction", then click `Commit changes`.
+## Privacy and security notes
 
-
-<img width="1030" alt="add-my-username" src="https://user-images.githubusercontent.com/18093541/63131801-efbd5480-bf8c-11e9-9806-89273f027d16.png">
-
-Once you click `Commit changes`, your changes will automatically be published on your GitHub Pages website. Refresh the page to see your new changes live in action.
-
-:tada: You just made your first commit! :tada:
-
-## Extra Credit: Keep on building!
-
-Change the placeholder Octocat gif on your GitHub Pages website by [creating your own personal Octocat emoji](https://myoctocat.com/build-your-octocat/) or [choose a different Octocat gif from our logo library here](https://octodex.github.com/). Add that image to line 12 of your `index.html` file, in place of the `<img src=` link.
-
-Want to add even more code and fun styles to your GitHub Pages website? [Follow these instructions](https://github.com/github/personal-website) to build a fully-fledged static website.
-
-![octocat](./images/create-octocat.png)
-
-## Everything you need to know about GitHub
-
-Getting started is the hardest part. If there’s anything you’d like to know as you get started with GitHub, try searching [GitHub Help](https://help.github.com). Our documentation has tutorials on everything from changing your repository settings to configuring GitHub from your command line.
+- **Hosted mode:** see [`SECURITY.md`](SECURITY.md). In short: mandatory MFA, row-level security enforcing workspace isolation and roles, an append-only audit log, the AI key kept server-side, a strict Content Security Policy and pinned dependencies.
+- **Demo mode:** risks and vendors stay in this browser's `localStorage`, and AI features send the register to `api.anthropic.com` with your own key. The key is kept in `sessionStorage` by default, or `localStorage` if you tick “Remember”. Use a dedicated key with a spend limit and avoid shared machines. Don't use demo mode for real customer data.

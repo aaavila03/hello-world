@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHandler } from "./handler.js";
 
-const ORIGIN = "https://app.riskpilot.example";
+const ORIGIN = "https://app.posture.example";
 const ORG = "11111111-1111-1111-1111-111111111111";
 
 function fakeAnthropic(result = { posture: "Low" }, { stopReason = "end_turn", fail } = {}) {

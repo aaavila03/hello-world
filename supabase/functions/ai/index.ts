@@ -1,4 +1,4 @@
-// Supabase Edge Function: runs RiskPilot's AI tasks with the server-held
+// Supabase Edge Function: runs Posture.ai's AI tasks with the server-held
 // Anthropic API key, on behalf of signed-in, MFA-verified workspace members.
 //
 // Secrets (supabase secrets set ...): ANTHROPIC_API_KEY, ALLOWED_ORIGINS

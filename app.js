@@ -1,4 +1,4 @@
-// RiskPilot – AI cyber risk manager. Plain ES modules, no build step.
+// Posture.ai – AI cyber risk manager. Plain ES modules, no build step.
 import { assessOffline } from "./heuristics.js";
 import { initVendors, residualTier, isOverdue } from "./vendors.js";
 import { reportPrompt, renderReport, reportMarkdown } from "./report.js";
@@ -12,7 +12,7 @@ const API_KEY_KEY = "riskpilot.apiKey";
 // Clickjacking defence for hosts that can't send a frame-ancestors header.
 if (window.top !== window.self) {
   document.documentElement.innerHTML = "";
-  throw new Error("RiskPilot cannot be embedded in another site.");
+  throw new Error("Posture.ai cannot be embedded in another site.");
 }
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -142,7 +142,7 @@ function updateAiStatus() {
   if (cloud) {
     el.textContent = "AI: on";
     el.className = "pill ok";
-    el.title = "Claude runs on the RiskPilot server";
+    el.title = "Claude runs on the Posture.ai server";
     return;
   }
   el.textContent = apiKey ? `AI: ${settings.model}` : "AI: offline mode";
@@ -369,7 +369,7 @@ function showAssessment(a, offline) {
 let lastReport = null;
 
 function showReport(ai) {
-  lastReport = { risks: riskSummary(), vendors: vendorsApi.summary(), ai, generatedAt: new Date().toISOString(), title: orgName() || "RiskPilot" };
+  lastReport = { risks: riskSummary(), vendors: vendorsApi.summary(), ai, generatedAt: new Date().toISOString(), title: orgName() || "Posture.ai" };
   $("#report").innerHTML = renderReport(lastReport);
   $("#btn-print-report").classList.remove("hidden");
   $("#btn-copy-report").classList.remove("hidden");
@@ -512,7 +512,7 @@ $("#btn-export-csv").addEventListener("click", () => {
   download("risk-register.csv", csv, "text/csv");
 });
 $("#btn-export-json").addEventListener("click", () => {
-  download("riskpilot-backup.json", JSON.stringify({ risks, vendors: vendorsApi.all() }, null, 2), "application/json");
+  download("posture-ai-backup.json", JSON.stringify({ risks, vendors: vendorsApi.all() }, null, 2), "application/json");
 });
 $("#import-json").addEventListener("change", async (e) => {
   const file = e.target.files[0];
@@ -522,7 +522,7 @@ $("#import-json").addEventListener("change", async (e) => {
     const parsed = JSON.parse(await file.text());
     // Accepts a plain array of risks (older exports) or a { risks, vendors } backup.
     const data = Array.isArray(parsed) ? parsed : parsed.risks;
-    if (!Array.isArray(data)) throw new Error("Expected an array of risks or a RiskPilot backup");
+    if (!Array.isArray(data)) throw new Error("Expected an array of risks or a Posture.ai backup");
     if (data.length > 5000) throw new Error("Too many records in one file");
     // Only known fields are kept and strings are length-capped (see store.js).
     const newVendors = Array.isArray(parsed.vendors) ? parsed.vendors.filter((v) => typeof v?.name === "string").map((v) => sanitizeRecord("vendors", v)) : [];

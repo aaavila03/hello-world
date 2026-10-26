@@ -127,7 +127,7 @@ async function enrollScreen() {
   if (error) throw error;
   screen(`
     <h1>Set up two-factor authentication</h1>
-    <p>RiskPilot requires an authenticator app (such as Microsoft Authenticator, Google Authenticator, 1Password or Authy). Scan this code, then enter the 6-digit code it shows.</p>
+    <p>Posture.ai requires an authenticator app (such as Microsoft Authenticator, Google Authenticator, 1Password or Authy). Scan this code, then enter the 6-digit code it shows.</p>
     <img class="qr" alt="QR code for your authenticator app" src="${esc(data.totp.qr_code)}" />
     <details class="small"><summary>Can't scan? Enter this key instead</summary><code class="secret">${esc(data.totp.secret)}</code></details>
     <form id="f-enroll">
@@ -276,7 +276,7 @@ export async function startAuth(onReady) {
     if (msg) return signInScreen(msg);
     await route();
   } catch (err) {
-    screen("<h1>RiskPilot</h1>");
+    screen("<h1>Posture.ai</h1>");
     fail(err);
   }
 }

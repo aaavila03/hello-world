@@ -44,5 +44,5 @@ jobs:
         run: node --test supabase/functions/ai/handler.test.js
       - name: Vendored library checksums
         run: |
-          cd cyber-risk/vendor
+          cd vendor
           grep -oE '`[a-z.-]+\.(js|mjs)`.*`[0-9a-f]{64}`' README.md | sed -E 's/`([^`]+)`.*`([0-9a-f]{64})`/\2  \1/' | sha256sum -c -

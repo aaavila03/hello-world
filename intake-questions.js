@@ -217,7 +217,7 @@ export function deriveControlAnswers(response) {
 }
 
 export function validateIntake(data) {
-  if (!data || data.format !== INTAKE_FORMAT) throw new Error("This file is not a RiskPilot intake response.");
+  if (!data || data.format !== INTAKE_FORMAT) throw new Error("This file is not a Posture.ai intake response.");
   if (data.version > INTAKE_VERSION) throw new Error("This response was made with a newer questionnaire version.");
   if (typeof data.answers !== "object" || !data.profile) throw new Error("The response file is incomplete.");
   return data;
