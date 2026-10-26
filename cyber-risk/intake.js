@@ -3,6 +3,12 @@
 import { INTAKE_DOMAINS, INTAKE_QUESTIONS, INTAKE_FORMAT, INTAKE_VERSION } from "./intake-questions.js";
 import { addDocuments } from "./autofill.js";
 
+// Clickjacking defence for hosts that can't send a frame-ancestors header.
+if (window.top !== window.self) {
+  document.documentElement.innerHTML = "";
+  throw new Error("RiskPilot cannot be embedded in another site.");
+}
+
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const escapeHtml = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));

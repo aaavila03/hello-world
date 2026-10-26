@@ -1,0 +1,48 @@
+name: Security tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  database:
+    name: Database access controls (RLS)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run row-level security tests
+        run: supabase/tests/run.sh
+
+  function:
+    name: AI function and shared code
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: AI task definitions in sync
+        run: supabase/tests/check-shared.sh
+      - name: AI function unit tests
+        run: node --test supabase/functions/ai/handler.test.js
+      - name: Vendored library checksums
+        run: |
+          cd cyber-risk/vendor
+          grep -oE '`[a-z.-]+\.(js|mjs)`.*`[0-9a-f]{64}`' README.md | sed -E 's/`([^`]+)`.*`([0-9a-f]{64})`/\2  \1/' | sha256sum -c -

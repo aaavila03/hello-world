@@ -3,6 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://*.supabase.co https://api.anthropic.com; base-uri 'none'; form-action 'self'; object-src 'none'; frame-src 'none'; worker-src 'none'; manifest-src 'self'" />
+  <meta name="referrer" content="no-referrer" />
   <title>RiskPilot – AI Cyber Risk Manager</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -17,6 +19,11 @@
       <button class="tab" data-view="settings">Settings</button>
     </nav>
     <span id="ai-status" class="pill"></span>
+    <div id="user-menu" class="user-menu hidden">
+      <span id="ws-label" class="ws-label"></span>
+      <button id="btn-switch-ws" class="small" title="Switch workspace">Switch</button>
+      <button id="btn-signout" class="small">Sign out</button>
+    </div>
   </header>
 
   <main>
@@ -54,10 +61,10 @@
         </select>
         <span id="cell-filter" class="pill hidden"></span>
         <div class="spacer"></div>
-        <button id="btn-add" class="primary">+ New risk</button>
+        <button id="btn-add" class="edit-only primary">+ New risk</button>
         <button id="btn-export-csv">Export CSV</button>
         <button id="btn-export-json" title="Backup of risks and vendors">Export JSON</button>
-        <label class="button">Import JSON<input id="import-json" type="file" accept="application/json" hidden /></label>
+        <label class="button edit-only">Import JSON<input id="import-json" type="file" accept="application/json" hidden /></label>
       </div>
       <div class="card table-card">
         <table id="risk-table">
@@ -83,7 +90,7 @@
           <option>Critical</option><option>High</option><option>Medium</option><option>Low</option>
         </select>
         <div class="spacer"></div>
-        <button id="btn-vendor-add" class="primary">+ New vendor</button>
+        <button id="btn-vendor-add" class="edit-only primary">+ New vendor</button>
         <button id="btn-vendor-export">Export CSV</button>
       </div>
       <div class="card table-card">
@@ -131,7 +138,37 @@
 
     <!-- Settings -->
     <section id="view-settings" class="view">
+      <!-- Workspace (cloud mode) -->
+      <div id="ws-settings" class="card ws-card hidden">
+        <h2>Workspace</h2>
+        <p id="ws-you" class="muted small"></p>
+        <div class="inline-form">
+          <input id="ws-name-input" maxlength="120" aria-label="Workspace name" />
+          <button id="btn-ws-rename">Rename</button>
+        </div>
+        <h3>AI usage</h3>
+        <div id="ws-usage" class="muted small">Loading…</div>
+        <div id="ws-admin" class="hidden">
+          <h3>Members</h3>
+          <div class="table-scroll"><table class="compact"><thead><tr><th>Email</th><th>Role</th><th>Joined</th><th></th></tr></thead><tbody id="members-body"></tbody></table></div>
+          <form id="invite-form" class="inline-form">
+            <input id="invite-email" type="email" placeholder="colleague@company.com" required aria-label="Email to invite" />
+            <select id="invite-role" aria-label="Role"></select>
+            <button class="primary">Invite</button>
+          </form>
+          <p id="invite-result" class="small"></p>
+          <p class="muted small">Viewer: read-only · Analyst: edit risks and vendors, run AI · Admin: also manage members and see the audit log · Owner: also manage admins and rename the workspace.</p>
+          <h3>Pending invitations</h3>
+          <div class="table-scroll"><table class="compact"><thead><tr><th>Email</th><th>Role</th><th>Expires</th><th></th></tr></thead><tbody id="invites-body"></tbody></table></div>
+          <h3>Audit log <button id="btn-audit-export" class="small">Export CSV</button></h3>
+          <p class="muted small">Every change in this workspace, most recent first. Entries can't be edited or deleted.</p>
+          <div class="table-scroll audit-scroll"><table class="compact"><thead><tr><th>When</th><th>Who</th><th>What</th></tr></thead><tbody id="audit-body"></tbody></table></div>
+        </div>
+        <button id="btn-ws-leave" class="danger small" style="margin-top:1rem">Leave workspace</button>
+      </div>
+
       <div class="card narrow">
+        <div id="local-settings">
         <h2>AI settings</h2>
         <label>Organisation name
           <input id="org-name" placeholder="Shown on briefings and vendor questionnaires" />
@@ -157,11 +194,12 @@
         </label>
         <button id="btn-save-settings" class="primary">Save settings</button>
         <span id="settings-saved" class="muted hidden">Saved ✓</span>
+        </div>
 
-        <h2 style="margin-top:2rem">Data</h2>
-        <p class="muted small">Risks and vendors are stored locally in your browser (localStorage). Export regularly to back them up.</p>
-        <button id="btn-sample">Load sample data</button>
-        <button id="btn-clear" class="danger">Delete all data</button>
+        <h2 id="data-heading">Data</h2>
+        <p id="data-note" class="muted small">Risks and vendors are stored locally in your browser (localStorage). Export regularly to back them up.</p>
+        <button class="edit-only" id="btn-sample">Load sample data</button>
+        <button id="btn-clear" class="danger owner-only">Delete all data</button>
       </div>
     </section>
   </main>
@@ -198,11 +236,11 @@
       </div>
       <div id="ai-panel" class="ai-panel hidden"></div>
       <div class="dialog-actions">
-        <button type="button" id="btn-ai-assess">✨ AI assess</button>
+        <button class="edit-only" type="button" id="btn-ai-assess">✨ AI assess</button>
         <div class="spacer"></div>
-        <button type="button" id="btn-delete" class="danger hidden">Delete</button>
+        <button type="button" id="btn-delete" class="edit-only danger hidden">Delete</button>
         <button type="button" id="btn-cancel">Cancel</button>
-        <button type="submit" class="primary">Save</button>
+        <button type="submit" class="edit-only primary">Save</button>
       </div>
     </form>
   </dialog>
@@ -232,10 +270,10 @@
       </div>
       <h3>Intake questionnaire</h3>
       <div class="intake-tools">
-        <button type="button" id="btn-intake-link">Copy link for vendor</button>
-        <label class="button">Import response<input id="intake-file" type="file" accept="application/json,.json" hidden /></label>
-        <label class="button" title="Add documentation the vendor sent you separately">Add documents<input id="intake-docs" type="file" multiple accept=".pdf,.txt,.md,.csv,application/pdf,text/plain,text/markdown,text/csv" hidden /></label>
-        <button type="button" id="btn-intake-fill" class="hidden">✨ Fill from documents</button>
+        <button type="button" id="btn-intake-link" class="edit-only">Copy link for vendor</button>
+        <label class="button edit-only">Import response<input id="intake-file" type="file" accept="application/json,.json" hidden /></label>
+        <label class="button edit-only" title="Add documentation the vendor sent you separately">Add documents<input id="intake-docs" type="file" multiple accept=".pdf,.txt,.md,.csv,application/pdf,text/plain,text/markdown,text/csv" hidden /></label>
+        <button type="button" id="btn-intake-fill" class="edit-only hidden">✨ Fill from documents</button>
         <a href="intake.html" target="_blank" rel="noopener" class="small">Preview form ↗</a>
       </div>
       <ul id="intake-doc-list" class="doc-list"></ul>
@@ -249,15 +287,24 @@
       <div id="vendor-score" class="score-line"></div>
       <div id="vendor-ai-panel" class="ai-panel hidden"></div>
       <div class="dialog-actions">
-        <button type="button" id="btn-vendor-ai">✨ AI vendor review</button>
-        <button type="button" id="btn-vendor-to-risk" class="hidden">Add to risk register</button>
+        <button class="edit-only" type="button" id="btn-vendor-ai">✨ AI vendor review</button>
+        <button type="button" id="btn-vendor-to-risk" class="edit-only hidden">Add to risk register</button>
         <div class="spacer"></div>
-        <button type="button" id="btn-vendor-delete" class="danger hidden">Delete</button>
+        <button type="button" id="btn-vendor-delete" class="edit-only danger hidden">Delete</button>
         <button type="button" id="btn-vendor-cancel">Cancel</button>
-        <button type="submit" class="primary">Save</button>
+        <button type="submit" class="edit-only primary">Save</button>
       </div>
     </form>
   </dialog>
+
+  <!-- Sign-in (cloud mode) -->
+  <div id="auth-screen" class="auth-screen hidden">
+    <div class="auth-card">
+      <div class="auth-brand">🛡️ <strong>RiskPilot</strong></div>
+      <div id="auth-body"><div class="spinner"></div></div>
+      <p id="auth-error" class="error-text" role="alert"></p>
+    </div>
+  </div>
 
   <div id="tooltip" class="tooltip hidden" role="tooltip"></div>
   <div id="toast" class="toast hidden"></div>
