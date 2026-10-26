@@ -64,13 +64,15 @@ export class RiskAI {
   }
 
   // One-shot request whose reply is constrained to the given JSON schema.
+  // Streams so long answers don't hit request timeouts.
   async structured(prompt, schema) {
-    const response = await this.client.beta.messages.create({
+    const stream = this.client.beta.messages.stream({
       ...this.baseParams(),
-      max_tokens: 16000,
+      max_tokens: 32000,
       output_config: { effort: this.effort, format: { type: "json_schema", schema } },
       messages: [{ role: "user", content: prompt }],
     });
+    const response = await stream.finalMessage();
     checkRefusal(response);
     const text = response.content.filter((b) => b.type === "text").map((b) => b.text).join("");
     return JSON.parse(text);
@@ -115,24 +117,6 @@ and estimate residual likelihood/impact once those controls are in place.`, ASSE
     const final = await stream.finalMessage();
     checkRefusal(final);
     return final.content.filter((b) => b.type === "text").map((b) => b.text).join("");
-  }
-
-  executiveReport(registerSummary, onText) {
-    return this.stream([{
-      role: "user",
-      content: `Here is our current cyber risk register and third-party vendor inventory as JSON:
-
-${registerSummary}
-
-Write a concise board-level executive report in Markdown with these sections:
-## Overall risk posture
-## Top risks requiring attention
-## Themes and systemic weaknesses
-## Third-party / vendor risk
-## Recommended priorities for the next 90 days
-## Risks that may be over- or under-scored
-Keep it under 700 words and refer to risks and vendors by their ID.`,
-    }], onText);
   }
 
   chat(history, registerSummary, onText) {

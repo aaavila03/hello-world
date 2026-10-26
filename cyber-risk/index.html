@@ -104,14 +104,18 @@
 
     <!-- AI analyst -->
     <section id="view-analyst" class="view">
-      <div class="grid2">
-        <div class="card">
-          <h2>Executive report</h2>
-          <p class="muted">Generate a board-ready summary of your current register.</p>
-          <button id="btn-report" class="primary">Generate report</button>
-          <button id="btn-copy-report" class="hidden">Copy</button>
-          <div id="report" class="markdown"></div>
+      <div class="card report-card">
+        <div class="report-toolbar">
+          <div><h2>Executive briefing</h2>
+            <p class="muted small">A board-ready briefing: charts and metrics from your register, with Claude's analysis and 90-day roadmap.</p></div>
+          <div class="spacer"></div>
+          <button id="btn-report" class="primary">✨ Generate briefing</button>
+          <button id="btn-print-report" class="hidden">Print / save PDF</button>
+          <button id="btn-copy-report" class="hidden">Copy as text</button>
         </div>
+        <div id="report"></div>
+      </div>
+      <div class="analyst-chat">
         <div class="card chat-card">
           <h2>Ask the analyst</h2>
           <div id="chat-log" class="chat-log">
@@ -129,6 +133,9 @@
     <section id="view-settings" class="view">
       <div class="card narrow">
         <h2>AI settings</h2>
+        <label>Organisation name
+          <input id="org-name" placeholder="Shown on briefings and vendor questionnaires" />
+        </label>
         <label>Anthropic API key
           <input id="api-key" type="password" placeholder="sk-ant-…" autocomplete="off" />
         </label>
@@ -252,6 +259,7 @@
     </form>
   </dialog>
 
+  <div id="tooltip" class="tooltip hidden" role="tooltip"></div>
   <div id="toast" class="toast hidden"></div>
   <script type="module" src="app.js"></script>
 </body>
