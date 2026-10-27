@@ -1,5 +1,7 @@
 # Deploying Posture.ai as a hosted service
 
+> New to this? Follow the beginner-friendly, click-by-click version for Mac instead: [deploy-step-by-step-mac.md](deploy-step-by-step-mac.md).
+
 This sets up Posture.ai for multiple customers with sign-in, MFA, isolated workspaces and server-side AI. It takes about an hour. You need accounts with [Supabase](https://supabase.com), [Cloudflare](https://dash.cloudflare.com/sign-up) and [Anthropic](https://platform.claude.com).
 
 Without these steps the app runs in **demo mode** (data in the browser, your own API key), which is fine for trying it out but not for customers.
@@ -32,7 +34,7 @@ In the Supabase dashboard under **Authentication**, match the settings in `supab
 
 ```bash
 supabase secrets set ANTHROPIC_API_KEY=sk-ant-... ALLOWED_ORIGINS=https://app.yourcompany.com
-supabase functions deploy ai
+supabase functions deploy ai --use-api
 ```
 
 Optional: `AI_MODEL` (default `claude-opus-5-5`) and `AI_EFFORT` (default `medium`).
@@ -41,21 +43,21 @@ In the Anthropic Console, create a **dedicated API key** for production and set 
 
 ## 4. Point the app at Supabase
 
-In `config.js`, set your project's URL and **anon** (public) key from **Project Settings → API**:
+In `config.js`, set your project's URL and **publishable** key from **Project Settings → API Keys** (it starts with `sb_publishable_`; older projects can use the legacy **anon** key instead):
 
 ```js
 export const SUPABASE_URL = "https://<project-ref>.supabase.co";
-export const SUPABASE_ANON_KEY = "<anon key>";
+export const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_...";
 ```
 
-The anon key is meant to be public: it can only do what the row-level security policies allow. **Never put the service-role key in the app.**
+The publishable key is meant to be public: it can only do what the row-level security policies allow. **Never put a secret (`sb_secret_…`) or service-role key in the app.**
 
 If you use a custom Supabase domain, add it to `connect-src` in `_headers` and in the Content-Security-Policy meta tag in `index.html`.
 
 ## 5. Host on Cloudflare Pages
 
 1. In Cloudflare, go to **Workers & Pages → Create → Pages → Connect to Git** and pick this repository.
-2. Build settings: **Framework preset** None, **Build command** empty, **Build output directory** `/` (the repository root). The `supabase/`, `docs/` and `.github/` folders are also served as files; they contain no secrets, but you can remove them from the deployment with a build step if you prefer.
+2. Build settings: **Framework preset** None, **Build command** empty, **Build output directory** empty, i.e. the repository root (enter `/` if a value is required). The `supabase/`, `docs/` and `.github/` folders are also served as files; they contain no secrets, but you can remove them from the deployment with a build step if you prefer.
 3. Deploy, then add your custom domain (e.g. `app.yourcompany.com`) under **Custom domains**.
 4. Check the security headers from `_headers` are being sent, e.g. with `curl -I https://app.yourcompany.com` or [securityheaders.com](https://securityheaders.com).
 

@@ -1,7 +1,7 @@
 // Sign-in, multi-factor authentication and workspace selection (cloud mode).
 // Nothing in the app is shown until the user has an MFA-verified (aal2)
 // session and has chosen a workspace; the database enforces the same rules.
-import { SUPABASE_URL, SUPABASE_ANON_KEY, IDLE_TIMEOUT_MINUTES } from "./config.js";
+import { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, IDLE_TIMEOUT_MINUTES } from "./config.js";
 
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -221,7 +221,7 @@ async function enter(org) {
   const { data: { user } } = await client.auth.getUser();
   screen(`<h1>${esc(org.name)}</h1><div class="spinner"></div> Loading workspace…`);
   try {
-    await onReadyCb({ client, user, org: { id: org.org_id, name: org.name, role: org.role }, url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY });
+    await onReadyCb({ client, user, org: { id: org.org_id, name: org.name, role: org.role }, url: SUPABASE_URL, anonKey: SUPABASE_PUBLISHABLE_KEY });
   } catch (err) {
     return fail(err);
   }
@@ -260,7 +260,7 @@ export async function startAuth(onReady) {
   $("#auth-screen").classList.remove("hidden");
   try {
     await loadSupabase();
-    client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    client = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
       auth: { flowType: "pkce", persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
     });
     let recovering = false;
