@@ -3,10 +3,10 @@
 //
 // Leave SUPABASE_URL empty to run in demo mode: data stays in this browser and
 // AI uses the API key entered in Settings. See docs/deploy.md.
-export const SUPABASE_URL = "https://abcdefghijklmnopqrst.supabase.co";
+export const SUPABASE_URL = "https://nkqezgylrsokvsvfnaoj.supabase.co";
 // From Supabase: Project Settings → API Keys → "Publishable key" (sb_publishable_…).
 // Older projects can use the legacy "anon" key instead. Never use a secret or service_role key.
-export const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_...";
+export const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_GKatpIm4N_Q8fnf273kKbw_FaoZx5dk";
 
 // Signed-in users are signed out after this many minutes without activity.
 export const IDLE_TIMEOUT_MINUTES = 30;
