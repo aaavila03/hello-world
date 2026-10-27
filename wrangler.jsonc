@@ -3,6 +3,10 @@
 {
   "name": "postureai",
   "compatibility_date": "2026-10-01",
+  // Cloudflare creates the DNS record and certificate for the custom domain on deploy.
+  "routes": [{ "pattern": "aiposture.app", "custom_domain": true }],
+  // Keep postureai.gazt.workers.dev working as a fallback address.
+  "workers_dev": true,
   "assets": {
     "directory": ".",
     "not_found_handling": "none"
