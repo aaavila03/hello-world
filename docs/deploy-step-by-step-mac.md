@@ -222,18 +222,18 @@ You'll make this edit on the GitHub website, so you don't need any coding tools.
 ### 5.1 Create the site
 
 1. Go to **https://dash.cloudflare.com/sign-up** and create a free account (or sign in).
-2. In the left sidebar, open **Compute (Workers) → Workers & Pages** (on some accounts it's just **Workers & Pages**), then click **Create**.
-3. Choose the **Pages** tab, then **Connect to Git** (it may say *Import an existing Git repository*).
-4. Click **Connect GitHub**, sign in, and allow access to the **posture.ai** repository only.
-5. Select **posture.ai** and click **Begin setup**.
-6. Fill in the build settings:
-   - **Project name:** `posture-ai`. This becomes your address: `https://posture-ai.pages.dev`. If that name is taken, Cloudflare suggests another; note what you get.
-   - **Production branch:** `master`
-   - **Framework preset:** `None`
+2. In the left sidebar, open **Compute (Workers) → Workers & Pages** (on some accounts it's just **Workers & Pages**), then click **Create** (or **Create application**).
+3. Choose **Import a repository** (it may say *Continue with GitHub*).
+4. Sign in to GitHub when asked, and allow Cloudflare access to the **posture.ai** repository only.
+5. Select **posture.ai** and fill in:
+   - **Project name:** `posture-ai`
    - **Build command:** *leave empty*
-   - **Build output directory:** *leave empty* (if Cloudflare insists on a value, enter `/`)
-7. Click **Save and Deploy** and wait for "Success".
-8. Click the link it shows (e.g. `https://posture-ai.pages.dev`). You should see the Posture.ai sign-in screen. **Don't create an account yet**: the server part isn't switched on until Part 6.
+   - **Deploy command:** `npx wrangler deploy` (usually already filled in)
+   - Leave everything else as it is. The repository includes a `wrangler.jsonc` file that tells Cloudflare how to publish the site, and which folders to keep private.
+6. Click **Deploy** (or **Create and deploy**) and wait for "Success".
+7. Open the address Cloudflare shows. It looks like `https://posture-ai.<your-account-name>.workers.dev`. You should see the Posture.ai sign-in screen. **Don't create an account yet**: the server part isn't switched on until Part 6.
+
+> Some accounts see a **Pages** option instead. That works too: choose **Connect to Git**, pick the repository, leave the build command and output directory empty, and your address will end in `.pages.dev`.
 
 Write down your site address. The rest of this guide calls it **your site address**.
 
@@ -256,7 +256,7 @@ In Terminal (in the `posture.ai` folder), replace both placeholders and run:
 supabase secrets set ANTHROPIC_API_KEY=<your-sk-ant-key> ALLOWED_ORIGINS=<your-site-address>
 ```
 
-For example, `ALLOWED_ORIGINS=https://posture-ai.pages.dev`. Use exactly your site address, starting with `https://`, with **no slash at the end**.
+For example, `ALLOWED_ORIGINS=https://posture-ai.yourname.workers.dev`. Use exactly your site address, starting with `https://`, with **no slash at the end**.
 
 ### 6.2 Deploy the AI function
 
@@ -270,8 +270,8 @@ It should end with a message that the function was deployed. **Check:** in the S
 
 In the Supabase dashboard, open **Authentication → URL Configuration**:
 
-- **Site URL:** your site address, e.g. `https://posture-ai.pages.dev`
-- **Redirect URLs:** click **Add URL** and add your site address followed by `/**`, e.g. `https://posture-ai.pages.dev/**`
+- **Site URL:** your site address, e.g. `https://posture-ai.yourname.workers.dev`
+- **Redirect URLs:** click **Add URL** and add your site address followed by `/**`, e.g. `https://posture-ai.yourname.workers.dev/**`
 
 Click **Save**. Without this, the links in confirmation and password-reset emails won't work.
 
@@ -295,11 +295,11 @@ Click **Save**. Without this, the links in confirmation and password-reset email
 ### 7.1 Use your own domain (recommended)
 
 1. Buy a domain if you don't have one (Cloudflare sells them under **Domain Registration**).
-2. In Cloudflare, open **Workers & Pages → posture-ai → Custom domains → Set up a custom domain**, enter e.g. `app.yourcompany.com`, and follow the prompts.
+2. In Cloudflare, open **Workers & Pages → posture-ai → Settings → Domains & Routes → Add → Custom domain** (on Pages projects: **Custom domains → Set up a custom domain**), enter e.g. `app.yourcompany.com`, and follow the prompts.
 3. Update the server to allow the new address. List both addresses, separated by a comma:
 
    ```bash
-   supabase secrets set ALLOWED_ORIGINS=https://app.yourcompany.com,https://posture-ai.pages.dev
+   supabase secrets set ALLOWED_ORIGINS=https://app.yourcompany.com,https://posture-ai.yourname.workers.dev
    ```
 
 4. In **Supabase → Authentication → URL Configuration**, change **Site URL** to `https://app.yourcompany.com` and add `https://app.yourcompany.com/**` to **Redirect URLs**.

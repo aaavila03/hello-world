@@ -1,0 +1,10 @@
+// Cloudflare Workers configuration: serves Posture.ai as static files.
+// Security headers come from _headers; files listed in .assetsignore are not published.
+{
+  "name": "posture-ai",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": ".",
+    "not_found_handling": "none"
+  }
+}

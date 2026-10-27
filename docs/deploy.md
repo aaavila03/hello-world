@@ -54,11 +54,11 @@ The publishable key is meant to be public: it can only do what the row-level sec
 
 If you use a custom Supabase domain, add it to `connect-src` in `_headers` and in the Content-Security-Policy meta tag in `index.html`.
 
-## 5. Host on Cloudflare Pages
+## 5. Host on Cloudflare
 
-1. In Cloudflare, go to **Workers & Pages → Create → Pages → Connect to Git** and pick this repository.
-2. Build settings: **Framework preset** None, **Build command** empty, **Build output directory** empty, i.e. the repository root (enter `/` if a value is required). The `supabase/`, `docs/` and `.github/` folders are also served as files; they contain no secrets, but you can remove them from the deployment with a build step if you prefer.
-3. Deploy, then add your custom domain (e.g. `app.yourcompany.com`) under **Custom domains**.
+1. In Cloudflare, go to **Workers & Pages → Create → Import a repository** and pick this repository. Leave the build command empty; the deploy command is `npx wrangler deploy`.
+2. The repository's `wrangler.jsonc` publishes the root folder as static assets with the security headers from `_headers`. `.assetsignore` keeps `supabase/`, `docs/`, `.github/` and Markdown files off the website. (A Cloudflare Pages project also works: no build command, output directory empty; `_headers` applies there too, but `.assetsignore` doesn't.)
+3. Deploy, then add your custom domain (e.g. `app.yourcompany.com`) under **Settings → Domains & Routes**.
 4. Check the security headers from `_headers` are being sent, e.g. with `curl -I https://app.yourcompany.com` or [securityheaders.com](https://securityheaders.com).
 
 Then turn off GitHub Pages for the repository (Settings → Pages) so there's only one public copy of the app, and update `.well-known/security.txt` with your security contact.
