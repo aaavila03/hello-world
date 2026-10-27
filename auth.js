@@ -255,9 +255,28 @@ function startIdleTimer() {
   reset();
 }
 
+// Catches config.js values copied from the deployment guide's examples.
+function configProblem() {
+  if (/abcdefghijklmnopqrst|<|your-project/i.test(SUPABASE_URL)) return "SUPABASE_URL still has the example value from the guide.";
+  if (!/^https:\/\/[^/]+$/.test(SUPABASE_URL.replace(/\/$/, ""))) return "SUPABASE_URL should look like https://<project-id>.supabase.co";
+  if (!SUPABASE_PUBLISHABLE_KEY || SUPABASE_PUBLISHABLE_KEY.includes("...") || SUPABASE_PUBLISHABLE_KEY.length < 30) {
+    return "SUPABASE_PUBLISHABLE_KEY is missing or still has the example value from the guide.";
+  }
+  if (/^sb_secret_/.test(SUPABASE_PUBLISHABLE_KEY)) return "That's a secret key. Use the publishable key (sb_publishable_…) and rotate the secret key in Supabase now.";
+  return "";
+}
+
 export async function startAuth(onReady) {
   onReadyCb = onReady;
   $("#auth-screen").classList.remove("hidden");
+  const problem = configProblem();
+  if (problem) {
+    screen(`<h1>Setup isn't finished</h1>
+      <p>Posture.ai can't connect to its database because <code>config.js</code> isn't filled in correctly:</p>
+      <p class="auth-note">${esc(problem)}</p>
+      <p class="small muted">Copy your Project URL and publishable key from Supabase (Project Settings → API Keys) into <code>config.js</code>, then reload this page.</p>`);
+    return;
+  }
   try {
     await loadSupabase();
     client = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {

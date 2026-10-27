@@ -196,12 +196,20 @@ You'll make this edit on the GitHub website, so you don't need any coding tools.
 
 1. Go to **https://github.com/aaavila03/posture.ai** and click the file **`config.js`**.
 2. Click the **pencil icon** (✏️ "Edit this file") near the top right of the file.
-3. Change these two lines, keeping the quote marks:
+3. Find these two lines and replace the text **between the quote marks** with **your own** Project URL and publishable key from step 3.5. Keep the quote marks and the semicolon at the end:
 
    ```js
-   export const SUPABASE_URL = "https://abcdefghijklmnopqrst.supabase.co";
-   export const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_...";
+   export const SUPABASE_URL = "<your Project URL>";
+   export const SUPABASE_PUBLISHABLE_KEY = "<your publishable key>";
    ```
+
+   For example, if your Project URL is `https://kqzvxyabcdmnopqrstuv.supabase.co`, the first line becomes:
+
+   ```js
+   export const SUPABASE_URL = "https://kqzvxyabcdmnopqrstuv.supabase.co";
+   ```
+
+   The publishable key is long (about 40+ characters) and starts with `sb_publishable_`. Paste the whole thing: **don't** leave `...` or any `< >` brackets in the file.
 
 4. Click **Commit changes…**, keep the option **Commit directly to the master branch**, and click **Commit changes**.
 
@@ -345,6 +353,7 @@ Before charging customers you'll need a **privacy policy**, **terms of service**
 | `command not found: brew` | Run the "Next steps" commands from step 1.2, or close and reopen Terminal. |
 | `command not found: supabase` | Run `brew install supabase/tap/supabase` again. |
 | `supabase link` says the password is wrong | Reset it in Supabase under **Project Settings → Database → Reset database password**, then try again. |
+| The site says **"Setup isn't finished"** | `config.js` still has example values or is missing the key. Redo Part 4 with your own Project URL and publishable key, wait two minutes, then hard-refresh with **⌘ Command + Shift + R**. |
 | The site still shows demo mode (an *API key* box in Settings) | Check `config.js` on GitHub has your URL and key, wait two minutes for Cloudflare, then hard-refresh with **⌘ Command + Shift + R**. |
 | "Incorrect email or password" right after signing up | You need to click the link in the confirmation email first. |
 | AI says "Origin not allowed" or nothing happens | The address in `ALLOWED_ORIGINS` must match your site address exactly, starting with `https://` and with no slash at the end. Re-run step 6.1, then step 6.2. |
