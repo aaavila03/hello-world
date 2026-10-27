@@ -1,0 +1,11 @@
+# Repository files that must not be published on the website.
+.git
+.github
+.nojekyll
+.assetsignore
+wrangler.jsonc
+node_modules
+.wrangler
+supabase
+docs
+*.md

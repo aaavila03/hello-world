@@ -39,13 +39,13 @@ Then go to **Settings**, paste an Anthropic API key, and optionally **Load sampl
 
 | | **Hosted (production)** | **Demo** |
 |---|---|---|
-| Turned on by | `SUPABASE_URL` / `SUPABASE_ANON_KEY` in `config.js` | leaving them empty |
+| Turned on by | `SUPABASE_URL` / `SUPABASE_PUBLISHABLE_KEY` in `config.js` | leaving them empty |
 | Sign-in | Email + password with mandatory authenticator-app MFA | none |
 | Data | Supabase PostgreSQL, one isolated workspace per customer, row-level security | this browser's `localStorage` |
 | Users | Owner / Admin / Analyst / Viewer roles, invitations, audit log | single user |
 | AI | Server-side function with the API key as a secret, per-workspace quotas and usage logging | the user's own key, called from the browser |
 
-Set up hosting with [`docs/deploy.md`](docs/deploy.md). Security controls are described in [`SECURITY.md`](SECURITY.md).
+Set up hosting with [`docs/deploy.md`](docs/deploy.md), or the beginner-friendly [step-by-step guide for Mac](docs/deploy-step-by-step-mac.md). Security controls are described in [`SECURITY.md`](SECURITY.md).
 
 ## How the AI works
 
