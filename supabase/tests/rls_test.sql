@@ -137,6 +137,31 @@ select test.ok('viewer rename has no effect', test.affected(format($$update publ
 select test.fails('viewer cannot raise AI limit', format($$update public.organizations set ai_monthly_limit = 99999 where id = %L$$, :'acme'));
 reset role;
 
+-- ---- saved briefings ----
+select test.login(:carol, 'aal2', 'carol@acme.test');
+set role authenticated;
+select public.save_briefing(:'acme', '{"generatedAt":"2026-10-01T00:00:00Z"}');
+select public.save_briefing(:'acme', '{"generatedAt":"2026-10-27T00:00:00Z"}');
+select test.ok('analyst can save briefing; new one replaces the old',
+  (select array_agg(report ->> 'generatedAt') from public.briefings) = array['2026-10-27T00:00:00Z']);
+select test.ok('briefing authorship stamped by the server', (select updated_by from public.briefings) = :carol::uuid);
+select test.fails('briefing must be an object', format($$select public.save_briefing(%L, '[1]')$$, :'acme'));
+select test.fails('no direct briefing writes', format($$insert into public.briefings (org_id, report) values (%L, '{}')$$, :'acme'));
+reset role;
+
+select test.login(:dave, 'aal2', 'dave@acme.test');
+set role authenticated;
+select test.ok('viewer can read briefing', test.count($$select 1 from public.briefings$$) = 1);
+select test.fails('viewer cannot save briefing', format($$select public.save_briefing(%L, '{}')$$, :'acme'));
+select test.fails('viewer cannot delete briefing', $$delete from public.briefings$$);
+reset role;
+
+select test.login(:bob, 'aal2', 'bob@other.test');
+set role authenticated;
+select test.ok('tenant isolation: Bob sees no Acme briefing', test.count($$select 1 from public.briefings$$) = 0);
+select test.fails('tenant isolation: Bob cannot save Acme briefing', format($$select public.save_briefing(%L, '{}')$$, :'acme'));
+reset role;
+
 select test.login(:erin, 'aal2', 'erin@acme.test');
 set role authenticated;
 select test.ok('unverified email cannot accept invitation', public.accept_invitations() = 0);
@@ -178,6 +203,7 @@ select test.ok('audit records risk insert', exists (select 1 from public.audit_l
 select test.ok('audit records changed fields', exists (select 1 from public.audit_log where entity = 'risks' and action = 'update' and details -> 'changed' ? 'owner'));
 select test.ok('audit records actor email', exists (select 1 from public.audit_log where actor_email = 'carol@acme.test'));
 select test.ok('audit records role change', exists (select 1 from public.audit_log where entity = 'memberships' and action = 'update'));
+select test.ok('audit records briefing replacement', exists (select 1 from public.audit_log where entity = 'briefings' and action = 'update'));
 select test.ok('audit records member removal', exists (select 1 from public.audit_log where entity = 'memberships' and action = 'delete'));
 select test.fails('audit log append-only even for the database owner', $$delete from public.audit_log$$);
 

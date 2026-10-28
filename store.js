@@ -2,7 +2,7 @@
 // Supabase database (protected by row-level security) in cloud mode.
 
 // Storage keys keep the original "riskpilot." prefix so existing browser data still loads.
-const LOCAL_KEYS = { risks: "riskpilot.risks", vendors: "riskpilot.vendors" };
+const LOCAL_KEYS = { risks: "riskpilot.risks", vendors: "riskpilot.vendors", briefing: "riskpilot.briefing" };
 
 // Fields that may be stored for each record; anything else (e.g. from an
 // imported file) is dropped, and strings are length-capped.
@@ -51,6 +51,14 @@ export class LocalStore {
     this.safeSet(localStorage, LOCAL_KEYS[kind], JSON.stringify(list));
     return Promise.resolve();
   }
+
+  async loadBriefing() {
+    try { return JSON.parse(this.safeGet(localStorage, LOCAL_KEYS.briefing) || "null"); } catch { return null; }
+  }
+
+  async saveBriefing(report) {
+    this.safeSet(localStorage, LOCAL_KEYS.briefing, JSON.stringify(report));
+  }
 }
 
 // Saves by diffing against the last state known to match the server, so only
@@ -72,6 +80,18 @@ export class CloudStore {
       this.snapshot[kind] = new Map(out[kind].map((r) => [r.id, JSON.stringify(sanitizeRecord(kind, r))]));
     }
     return out;
+  }
+
+  async loadBriefing() {
+    const { data, error } = await this.client.from("briefings").select("report").eq("org_id", this.orgId).maybeSingle();
+    if (error) throw error;
+    return data?.report ?? null;
+  }
+
+  // Replaces the workspace's saved briefing (analysts and above; see save_briefing in the schema).
+  async saveBriefing(report) {
+    const { error } = await this.client.rpc("save_briefing", { org: this.orgId, briefing: report });
+    if (error) throw error;
   }
 
   save(kind, list) {

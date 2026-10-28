@@ -368,11 +368,28 @@ function showAssessment(a, offline) {
 // ---------- AI analyst ----------
 let lastReport = null;
 
-function showReport(ai) {
-  lastReport = { risks: riskSummary(), vendors: vendorsApi.summary(), ai, generatedAt: new Date().toISOString(), title: orgName() || "Posture.ai" };
-  $("#report").innerHTML = renderReport(lastReport);
+// Shows a briefing: a new one built from the register now, or the saved one.
+function showReport(report) {
+  lastReport = report;
+  $("#report").innerHTML = renderReport(report);
+  const when = new Date(report.generatedAt).toLocaleString(undefined, { dateStyle: "long", timeStyle: "short" });
+  $("#report-meta").textContent = `Generated ${when}${report.generatedBy ? ` by ${report.generatedBy}` : ""}. Stays here until the next briefing is generated.`;
+  $("#report-meta").classList.remove("hidden");
   $("#btn-print-report").classList.remove("hidden");
   $("#btn-copy-report").classList.remove("hidden");
+}
+
+// Builds a briefing from the current register, shows it, and saves it as the latest.
+async function publishReport(ai) {
+  const report = { risks: riskSummary(), vendors: vendorsApi.summary(), ai, generatedAt: new Date().toISOString(),
+    generatedBy: cloud?.user?.email || null, title: orgName() || "Posture.ai" };
+  showReport(report);
+  if (!canEdit()) return toast("Viewers can generate briefings, but only analysts and above can replace the saved one.");
+  try {
+    await store.saveBriefing(report);
+  } catch (err) {
+    toast(`Couldn't save the briefing: ${err.message}`, true);
+  }
 }
 
 $("#btn-report").addEventListener("click", async () => {
@@ -380,7 +397,7 @@ $("#btn-report").addEventListener("click", async () => {
   if (!risks.length) return toast("Your register is empty", true);
   const ctx = await getAI();
   if (!ctx) {
-    showReport(null);
+    await publishReport(null);
     toast("Showing the data-only briefing. Add an API key in Settings for Claude's analysis.");
     return;
   }
@@ -389,7 +406,7 @@ $("#btn-report").addEventListener("click", async () => {
   btn.innerHTML = `<span class="spinner"></span> Writing briefing…`;
   out.innerHTML = `<div class="rh-loading"><div class="spinner"></div><p>Claude is analysing ${risks.length} risks and ${vendorsApi.all().length} vendors. This usually takes under a minute.</p></div>`;
   try {
-    showReport(await ctx.ai.briefing(reportPrompt(registerSummary())));
+    await publishReport(await ctx.ai.briefing(reportPrompt(registerSummary())));
     afterAI();
   } catch (err) {
     out.innerHTML = `<p class="error-text">Briefing failed: ${escapeHtml(ctx.describe(err))}</p>`;
@@ -574,6 +591,8 @@ async function boot() {
   applyRoleUI();
   loadSettingsForm();
   render();
+  store.loadBriefing().then((saved) => { if (saved) showReport(saved); })
+    .catch((err) => toast(`Couldn't load the saved briefing: ${err.message}`, true));
 }
 
 // When a save is rejected (e.g. a role change or a concurrent edit), reload the server's data.

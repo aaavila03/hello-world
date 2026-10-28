@@ -245,6 +245,7 @@ details.domain summary > span:first-child { flex: 1; }
 .report-toolbar { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
 .report-toolbar h2 { margin-bottom: 0.1rem; }
 .report-toolbar p { margin: 0; }
+#report-meta { margin-top: 0.3rem; color: var(--text); }
 .analyst-chat { max-width: 760px; }
 .rh-loading { text-align: center; padding: 3rem 1rem; color: var(--muted); }
 .rh-loading .spinner { width: 28px; height: 28px; }
