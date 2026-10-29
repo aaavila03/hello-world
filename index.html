@@ -250,7 +250,10 @@
   <!-- Vendor editor -->
   <dialog id="vendor-dialog">
     <form id="vendor-form" method="dialog">
-      <h2 id="vendor-dialog-title">New vendor</h2>
+      <div class="dialog-head">
+        <h2 id="vendor-dialog-title">New vendor</h2>
+        <button type="button" id="btn-vendor-close" class="link close-x" aria-label="Close">✕</button>
+      </div>
       <div class="form-grid">
         <label>Vendor name <input name="name" required /></label>
         <label>Service provided <input name="service" placeholder="e.g. Payroll SaaS" /></label>

@@ -120,9 +120,9 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
 
     $("#vendor-table tbody").innerHTML = rows.map((v) => {
       const inh = inherentTier(v), res = residualTier(v), pct = controlScore(v), due = nextReview(v);
-      return `<tr>
+      return `<tr class="${dialog.open && editingId === v.id ? "selected" : ""}">
         <td>${escapeHtml(v.id)}</td>
-        <td><strong>${escapeHtml(v.name)}</strong>${v.intake ? ' <span class="tag" title="Intake questionnaire received">intake ✓</span>' : ""}${newSubmission(v) ? ' <span class="tag p-medium" title="The vendor submitted their questionnaire – open the vendor to review it">response submitted</span>'
+        <td><button type="button" class="link vendor-name" data-vendor="${escapeHtml(v.id)}">${escapeHtml(v.name)}</button>${v.intake ? ' <span class="tag" title="Intake questionnaire received">intake ✓</span>' : ""}${newSubmission(v) ? ' <span class="tag p-medium" title="The vendor submitted their questionnaire – open the vendor to review it">response submitted</span>'
           : responses.get(v.id)?.status === "draft" && !v.intake?.serverSubmittedAt ? ' <span class="tag" title="The vendor has started their questionnaire">in progress</span>' : ""}${openFollowups(v.intake) ? ` <span class="tag p-medium" title="Follow-up questions not yet resolved">${openFollowups(v.intake)} follow-up${openFollowups(v.intake) > 1 ? "s" : ""} open</span>` : ""}<div class="muted small">${escapeHtml(v.service)}</div></td>
         <td>${escapeHtml(v.criticality)}</td>
         <td>${escapeHtml(v.dataSensitivity)}</td>
@@ -146,7 +146,10 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
   }));
   document.addEventListener("click", (e) => {
     const btn = e.target.closest("[data-vendor]");
-    if (btn) { e.preventDefault(); openEditor(vendors.find((v) => v.id === btn.dataset.vendor)); }
+    if (!btn) return;
+    e.preventDefault();
+    if (dialog.open && editingId === btn.dataset.vendor) return;
+    if (confirmDiscard()) openEditor(vendors.find((v) => v.id === btn.dataset.vendor));
   });
 
   // ---------- editor ----------
@@ -163,6 +166,39 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
   function readForm() {
     const data = Object.fromEntries(new FormData(form));
     return { ...data, answers: pendingIntake ? deriveControlAnswers(pendingIntake) : legacyAnswers };
+  }
+
+  // On wide screens the vendor opens beside the list (split view); on phones and
+  // tablets it opens as a full dialog.
+  const splitView = window.matchMedia("(min-width: 1100px)");
+  // What the editor held when it opened, to spot unsaved changes.
+  let snapshot = "";
+  const editorState = () => JSON.stringify({ form: readForm(), intake: pendingIntake, ai: pendingAssessment });
+
+  function confirmDiscard() {
+    if (!dialog.open || editorState() === snapshot) return true;
+    const name = form.elements.name.value.trim() || "this vendor";
+    return confirm(`Discard unsaved changes to ${name}?`);
+  }
+
+  function closeEditor() {
+    if (confirmDiscard()) hideEditor();
+  }
+
+  // Closes the editor and restores the full-width list. Done here as well as on
+  // the dialog's close event, which some browsers don't fire for the side panel.
+  function hideEditor() {
+    if (dialog.open) dialog.close();
+    afterClose();
+  }
+
+  function afterClose() {
+    // A late close event can arrive after another vendor has opened.
+    if (dialog.open) return;
+    if (!document.body.classList.contains("vendor-split") && !$("#vendor-table tr.selected")) return;
+    document.body.classList.remove("vendor-split");
+    render();
+    refreshResponses();
   }
 
   function updateLiveScore() {
@@ -194,7 +230,17 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
     else panel.classList.add("hidden");
     renderIntake();
     updateLiveScore();
-    dialog.showModal();
+    snapshot = editorState();
+    if (splitView.matches) {
+      // The top bar's height positions the panel below it.
+      document.documentElement.style.setProperty("--topbar-h", `${$(".topbar").offsetHeight}px`);
+      document.body.classList.add("vendor-split");
+      if (!dialog.open) dialog.show();
+      form.scrollTop = 0;
+    } else if (!dialog.open) {
+      dialog.showModal();
+    }
+    render();
     syncOnline(vendor);
   }
 
@@ -657,15 +703,22 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
     }
   }
 
-  $("#btn-vendor-add").addEventListener("click", () => openEditor(null));
-  dialog.addEventListener("close", refreshResponses);
+  $("#btn-vendor-add").addEventListener("click", () => { if (confirmDiscard()) openEditor(null); });
+  dialog.addEventListener("close", afterClose);
+  // A modal dialog closes on Escape by itself; the side panel needs this.
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && dialog.open && document.body.classList.contains("vendor-split")) closeEditor();
+  });
+  // A modal dialog's Escape: ask before losing changes.
+  dialog.addEventListener("cancel", (e) => { if (!confirmDiscard()) e.preventDefault(); });
   if (intakeServer) $("#intake-import").classList.add("hidden");
   refreshResponses();
-  $("#btn-vendor-cancel").addEventListener("click", () => dialog.close());
+  $("#btn-vendor-cancel").addEventListener("click", closeEditor);
+  $("#btn-vendor-close").addEventListener("click", closeEditor);
   $("#btn-vendor-delete").addEventListener("click", () => {
     if (!confirm(`Delete vendor ${editingId}?`)) return;
     vendors = vendors.filter((v) => v.id !== editingId);
-    dialog.close();
+    hideEditor();
     save();
   });
 
@@ -677,7 +730,8 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
       editingId = nextId();
       vendors.push({ id: editingId, ...data, created: new Date().toISOString() });
     }
-    if (close) dialog.close();
+    snapshot = editorState();
+    if (close) hideEditor();
     save();
   }
 
