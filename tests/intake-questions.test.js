@@ -72,3 +72,9 @@ test("a changed-answer note doesn't count as the vendor's turn", () => {
   assert.equal(m.lastSpeaker(t), "vendor");
   assert.deepEqual(awaitingVendor({ VUL5: t }), []);
 });
+
+test("the vendor's AI fill details are sanitised on import", () => {
+  const d = validateIntake({ format: "riskpilot-intake", version: 2, answers: {}, profile: {}, vendorAiFill: { at: 5, documents: "nope", summary: { x: 1 } } });
+  assert.deepEqual(d.vendorAiFill, { at: "5", documents: [], summary: "[object Object]" });
+  assert.equal(validateIntake({ format: "riskpilot-intake", version: 2, answers: {}, profile: {} }).vendorAiFill, null);
+});

@@ -35,7 +35,10 @@ In the Supabase dashboard under **Authentication**, match the settings in `supab
 ```bash
 supabase secrets set ANTHROPIC_API_KEY=sk-ant-... ALLOWED_ORIGINS=https://app.yourcompany.com
 supabase functions deploy ai --use-api
+supabase functions deploy intake-ai --use-api --no-verify-jwt
 ```
+
+`intake-ai` lets vendors use **✨ Fill answers from my documents** on the intake form. Vendors have no account, so it is deployed without gateway JWT checks: each request must carry the invite token from a link an analyst copied (stored only as a hash, valid 30 days, 5 AI runs, counted against the workspace's monthly allowance). Skip deploying it if you don't want vendors to use AI: the button's requests then fail with a clear message and vendors answer manually.
 
 Optional: `AI_MODEL` (default `claude-opus-5-5`) and `AI_EFFORT` (default `medium`).
 
@@ -82,6 +85,7 @@ PGHOST=localhost PGUSER=postgres supabase/tests/run.sh
 
 # AI function tests and shared-code check
 node --test supabase/functions/ai/handler.test.js
+node --test supabase/functions/intake-ai/handler.test.js
 supabase/tests/check-shared.sh
 
 # Vendor questionnaire logic

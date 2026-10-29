@@ -137,6 +137,36 @@ select test.ok('viewer rename has no effect', test.affected(format($$update publ
 select test.fails('viewer cannot raise AI limit', format($$update public.organizations set ai_monthly_limit = 99999 where id = %L$$, :'acme'));
 reset role;
 
+-- ---- vendor invite links ----
+select test.login(:carol, 'aal2', 'carol@acme.test');
+set role authenticated;
+select public.create_intake_invite(:'acme', 'V-001') as invite_token \gset
+select test.ok('analyst can create a vendor invite', length(:'invite_token') = 64);
+select test.fails('invite vendor ref format enforced', format($$select public.create_intake_invite(%L, 'V-1; drop')$$, :'acme'));
+select test.fails('invites are not readable through the API', $$select 1 from public.intake_invites$$);
+select test.fails('no direct invite writes', format($$insert into public.intake_invites (org_id, token_hash) values (%L, repeat('a', 64))$$, :'acme'));
+reset role;
+select test.ok('only the token hash is stored',
+  (select token_hash from public.intake_invites) = encode(sha256(convert_to(:'invite_token', 'UTF8')), 'hex')
+  and not exists (select 1 from public.intake_invites where token_hash = :'invite_token'));
+select test.ok('invites default to 30 days and 5 AI runs',
+  (select expires_at > now() + interval '29 days' and ai_limit = 5 and created_by = :carol::uuid from public.intake_invites));
+
+select test.login(:dave, 'aal2', 'dave@acme.test');
+set role authenticated;
+select test.fails('viewer cannot create a vendor invite', format($$select public.create_intake_invite(%L, '')$$, :'acme'));
+reset role;
+
+select test.login(:bob, 'aal2', 'bob@other.test');
+set role authenticated;
+select test.fails('tenant isolation: Bob cannot create Acme invites', format($$select public.create_intake_invite(%L, '')$$, :'acme'));
+reset role;
+
+select test.login(:carol, 'aal1', 'carol@acme.test');
+set role authenticated;
+select test.fails('aal1 cannot create a vendor invite', format($$select public.create_intake_invite(%L, '')$$, :'acme'));
+reset role;
+
 -- ---- saved briefings ----
 select test.login(:carol, 'aal2', 'carol@acme.test');
 set role authenticated;

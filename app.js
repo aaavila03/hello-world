@@ -587,6 +587,12 @@ async function boot() {
     persist: (list) => store.save("vendors", list),
     getOrgName: orgName,
     onChange: renderDashboard,
+    // Hosted mode: an invite token lets the vendor's form use Claude on their documents.
+    createInvite: cloud ? async (vendorRef) => {
+      const { data: token, error } = await cloud.client.rpc("create_intake_invite", { org: cloud.org.id, vendor: vendorRef || "" });
+      if (error) throw error;
+      return token;
+    } : null,
   });
   applyRoleUI();
   loadSettingsForm();

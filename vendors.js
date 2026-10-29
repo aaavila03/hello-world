@@ -83,7 +83,7 @@ const tierClass = (t) => ({ Low: "low", Medium: "medium", High: "high", Critical
 // ---------- module ----------
 const openFollowups = (intake) => Object.values(intake?.followups || {}).filter((t) => t.status === "open").length;
 
-export function initVendors({ $, $$, escapeHtml, toast, download, initial, persist, getAI, getOrgName, addRegisterRisk, onChange }) {
+export function initVendors({ $, $$, escapeHtml, toast, download, initial, persist, getAI, getOrgName, addRegisterRisk, onChange, createInvite }) {
   let vendors = initial || [];
   let sortKey = "residual", sortDir = -1;
 
@@ -310,7 +310,9 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
   async function sendFollowups() {
     const name = form.elements.name.value.trim() || pendingIntake.vendorName || "vendor";
     const answers = Object.fromEntries(Object.entries(pendingIntake.answers)
-      .filter(([, r]) => !["ai", "analyst"].includes(r.source)).map(([id, r]) => [id, { answer: r.answer, comment: r.comment || "" }]));
+      .filter(([, r]) => !["ai", "analyst"].includes(r.source))
+      .map(([id, r]) => [id, { answer: r.answer, comment: r.comment || "",
+        ...(r.source === "vendor-ai" ? { source: r.source, evidence: r.evidence, document: r.document } : {}) }]));
     const file = {
       format: INTAKE_FORMAT, version: INTAKE_VERSION,
       vendorRef: editingId || pendingIntake.vendorRef || "", vendorName: name, requester: getOrgName() || "",
@@ -318,7 +320,7 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
       followups: pendingIntake.followups, attested: false,
     };
     download(`follow-up-${name.replace(/[^\w-]+/g, "_").slice(0, 60)}.json`, JSON.stringify(file, null, 2), "application/json");
-    const link = intakeLink(name);
+    const link = await intakeLink(name);
     try {
       await navigator.clipboard.writeText(link);
       toast("Follow-up file downloaded and form link copied – email both to the vendor, then Save");
@@ -327,12 +329,21 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
     }
   }
 
-  function intakeLink(name) {
+  // The form link. In hosted mode it carries a new invite token so the vendor can
+  // ask Claude to fill answers from their documents (5 runs, 30 days).
+  async function intakeLink(name) {
     const url = new URL("intake.html", location.href);
     url.searchParams.set("v", name);
     if (editingId) url.searchParams.set("ref", editingId);
     if (getOrgName()) url.searchParams.set("org", getOrgName());
     if (selectedModules().length) url.searchParams.set("m", selectedModules().join(","));
+    if (createInvite) {
+      try {
+        url.searchParams.set("t", await createInvite(editingId || ""));
+      } catch (err) {
+        toast(`The link works, but without AI help for the vendor: ${err.message}`, true);
+      }
+    }
     return url.href;
   }
 
@@ -355,8 +366,10 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
       ${r.source === "analyst" ? '<span class="tag">changed by you</span>' : ""} ${askButton(q.id)}${evidence(r)}</li>`).join("");
     const conflictRows = conflicts.map(([q, r]) => `<li><span class="iq-id">${q.id}</span> ${escapeHtml(q.text)}
       Vendor: <strong>${escapeHtml(r.answer)}</strong> · documents suggest: <strong>${escapeHtml(r.aiSuggestion.answer)}</strong>${evidence(r.aiSuggestion)}</li>`).join("");
+    const byVendor = entries.filter(([, r]) => r.source === "vendor-ai").length;
     return `
-      <div class="ai-fill-line">✨ Claude filled ${filled.length} answer(s) from ${run.documents.length} document(s) (${escapeHtml(run.documents.map((d) => d.name).join(", "))}) on ${escapeHtml(run.at.slice(0, 10))}.
+      <div class="ai-fill-line">✨ ${run.byVendor ? `The vendor used Claude to suggest answers from ${run.documents.length} document(s) (${escapeHtml(run.documents.map((d) => d.name).join(", "))}) on ${escapeHtml(run.at.slice(0, 10))} and kept ${byVendor} of them, which they attested`
+        : `Claude filled ${filled.length} answer(s) from ${run.documents.length} document(s) (${escapeHtml(run.documents.map((d) => d.name).join(", "))}) on ${escapeHtml(run.at.slice(0, 10))}`}.
         ${conflicts.length ? `<span class="error-text">${conflicts.length} vendor answer(s) disagree with the documents.</span>` : ""}</div>
       ${run.summary ? `<div class="small muted">${escapeHtml(run.summary)}</div>` : ""}
       ${conflicts.length ? `<details open><summary>Vendor answers that disagree with the documents (${conflicts.length})</summary><ul>${conflictRows}</ul></details>` : ""}
@@ -463,10 +476,10 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
   $("#btn-intake-link").addEventListener("click", async () => {
     const name = form.elements.name.value.trim();
     if (!name) return toast("Add a vendor name first", true);
-    const link = intakeLink(name);
+    const link = await intakeLink(name);
     try {
       await navigator.clipboard.writeText(link);
-      toast("Intake link copied – send it to the vendor");
+      toast(createInvite ? "Intake link copied – the vendor can use it for 30 days, including AI help with their documents" : "Intake link copied – send it to the vendor");
     } catch {
       prompt("Copy this link and send it to the vendor:", link);
     }
@@ -501,7 +514,7 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
       answers: { ...kept, ...data.answers },
       followups: mergeFollowups(prev?.followups, data.followups, prev?.answers, data.answers),
       documents: [...(prev?.documents || []).filter((d) => !docsMeta.some((x) => x.name === d.name)), ...docsMeta],
-      ...(prev?.aiFill ? { aiFill: prev.aiFill } : {}),
+      ...(prev?.aiFill ? { aiFill: prev.aiFill } : data.vendorAiFill ? { aiFill: { ...data.vendorAiFill, byVendor: true } } : {}),
     };
     if (data.modules.length && !form.elements.intakeModules.value) form.elements.intakeModules.value = data.modules[0];
     const f = form.elements;
@@ -627,7 +640,8 @@ contract clauses we should require, and follow-up due-diligence questions to sen
       const r = pendingIntake.answers[q.id];
       const tag = q.type === "inverse" ? " (Yes is a red flag)" : q.type === "info" ? " (context only)" : "";
       const src = r?.source === "ai" ? " [filled by Claude from the vendor's documents, not attested by the vendor]"
-        : r?.source === "analyst" ? " [set by our analyst]" : "";
+        : r?.source === "analyst" ? " [set by our analyst]"
+        : r?.source === "vendor-ai" ? " [suggested by Claude from the vendor's documents, kept and attested by the vendor]" : "";
       const ev = r?.evidence ? ` – evidence from ${r.document || "documents"}: "${r.evidence}"` : "";
       const conflict = r?.aiSuggestion ? ` – NOTE: the vendor's documents suggest "${r.aiSuggestion.answer}" instead${r.aiSuggestion.evidence ? ` ("${r.aiSuggestion.evidence}")` : ""}` : "";
       const t = pendingIntake.followups?.[q.id];

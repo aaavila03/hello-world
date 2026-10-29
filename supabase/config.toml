@@ -42,3 +42,7 @@ token_verifications = 30
 [functions.ai]
 # The platform gateway rejects requests without a valid JWT before the function runs.
 verify_jwt = true
+
+[functions.intake-ai]
+# Vendors have no account: requests carry an invite token instead, checked by the function.
+verify_jwt = false

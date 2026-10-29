@@ -222,6 +222,8 @@ details.domain summary > span:first-child { flex: 1; }
 .thread textarea { margin-top: 0.4rem; }
 .thread-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.4rem; }
 .followup-banner { border-color: var(--high); }
+.iq-evidence.warn { border-left-color: var(--high); color: var(--text); }
+.ai-fill { margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border); }
 .followup-banner a { font-family: ui-monospace, monospace; color: var(--primary); font-weight: 600; }
 .intake-actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; position: sticky; bottom: 0.5rem; }
 @media print {

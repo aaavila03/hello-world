@@ -4,7 +4,8 @@
 // continue, answer follow-up questions and send it back again.
 import { INTAKE_DOMAINS, INTAKE_QUESTIONS, INTAKE_FORMAT, INTAKE_VERSION, INTAKE_MODULES, activeQuestions,
   validateIntake, cleanFollowups, awaitingVendor } from "./intake-questions.js";
-import { addDocuments } from "./autofill.js";
+import { addDocuments, autofillPrompt } from "./autofill.js";
+import { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } from "./config.js";
 
 // Clickjacking defence for hosts that can't send a frame-ancestors header.
 if (window.top !== window.self) {
@@ -23,10 +24,18 @@ let requester = params.get("org") || "";
 // Optional sections the requester turned on, e.g. ?m=cip013
 let modules = (params.get("m") || "").split(",").filter((m) => m in INTAKE_MODULES);
 const DRAFT_KEY = `riskpilot.intake.${vendorRef || vendorName || "draft"}`;
+// Invite token from the requester's link: lets this form ask Claude to fill
+// answers from the vendor's documents (hosted mode only).
+const invite = /^[0-9a-f]{64}$/.test(params.get("t") || "") ? params.get("t") : "";
+const aiAvailable = Boolean(SUPABASE_URL && invite);
 
 const form = $("#intake-form");
 // Follow-up threads from the requester (see intake-questions.js).
 let threads = {};
+// Claude's suggestions from the vendor's documents, by question:
+// { answer, comment, evidence, document, conflict } (conflict: differs from the vendor's own answer).
+let aiNotes = {};
+let vendorAiFill = null; // { at, documents, summary }, passed on to the requester
 
 function renderHeader() {
   if (vendorName) $("#intro-title").textContent = `Security intake questionnaire – ${vendorName}`;
@@ -49,6 +58,7 @@ function renderDomains() {
           ${["Yes", "No", "N/A"].map((a) => `<label><input type="radio" name="${q.id}" value="${a}" /> ${a}</label>`).join("")}
         </div>
         <textarea name="${q.id}_comment" rows="1" placeholder="Comment, compensating control or remediation date (optional)"></textarea>
+        <div class="iq-ai" data-ai="${q.id}"></div>
         <div class="iq-thread" data-thread="${q.id}"></div>
       </div>`).join("")}
   </details>`).join("");
@@ -80,11 +90,18 @@ function collect() {
   const profile = {};
   for (const f of PROFILE_FIELDS) profile[f] = form.elements[f].value.trim();
   for (const name of PROFILE_LISTS) profile[name] = $$(`input[name="${name}"]:checked`).map((c) => c.value);
+  const answers = readAnswers();
+  // Answers the vendor kept as Claude suggested them carry the source and evidence.
+  for (const [id, r] of Object.entries(answers)) {
+    const n = aiNotes[id];
+    if (n && !n.conflict && n.answer === r.answer) Object.assign(r, { source: "vendor-ai", evidence: n.evidence, document: n.document });
+    else if (n?.conflict) r.aiSuggestion = { answer: n.answer, comment: n.comment, evidence: n.evidence, document: n.document };
+  }
   return {
     format: INTAKE_FORMAT, version: INTAKE_VERSION,
     vendorRef, vendorName, requester, modules,
-    profile, answers: readAnswers(),
-    followups: threads, replies: readReplies(),
+    profile, answers,
+    followups: threads, replies: readReplies(), aiNotes, vendorAiFill,
     attested: form.elements.attested.checked,
   };
 }
@@ -102,6 +119,10 @@ function restore(data) {
   form.elements.attested.checked = !!data.attested;
   threads = cleanFollowups(data.followups);
   renderThreads(data.replies || {});
+  aiNotes = data.aiNotes && typeof data.aiNotes === "object" ? data.aiNotes : Object.fromEntries(Object.entries(data.answers || {})
+    .filter(([, r]) => r.source === "vendor-ai").map(([id, r]) => [id, { answer: r.answer, comment: r.comment, evidence: r.evidence, document: r.document }]));
+  vendorAiFill = data.vendorAiFill || null;
+  renderAiNotes();
 }
 
 // ---------- follow-up threads ----------
@@ -224,7 +245,7 @@ function responseFile() {
   for (const [id, text] of Object.entries(data.replies)) {
     if (followups[id]?.status === "open") followups[id].messages.push({ by: "vendor", name: data.profile.contactName, text, at });
   }
-  const { replies, ...rest } = data;
+  const { replies, aiNotes: _notes, ...rest } = data;
   return { data: { ...rest, followups, documents: docs, submittedAt: at }, replies };
 }
 
@@ -289,6 +310,9 @@ $("#btn-clear-intake").addEventListener("click", () => {
   form.reset();
   threads = {};
   renderThreads();
+  aiNotes = {};
+  vendorAiFill = null;
+  renderAiNotes();
   if (vendorName) form.elements.legalName.value = vendorName;
   updateProgress();
   $("#save-state").textContent = "";
@@ -300,6 +324,7 @@ const docs = [];
 function renderDocs() {
   $("#doc-list").innerHTML = docs.map((d, i) => `<li><span>📄 ${escapeHtml(d.name)}</span><span class="small muted">${(d.size / 1024 / 1024).toFixed(1)} MB</span>
     <button type="button" class="small" data-remove="${i}">Remove</button></li>`).join("");
+  $("#ai-fill").classList.toggle("hidden", !aiAvailable || !docs.length);
 }
 
 async function attach(files) {
@@ -317,3 +342,75 @@ $("#doc-list").addEventListener("click", (e) => {
   const i = e.target.dataset.remove;
   if (i != null) { docs.splice(Number(i), 1); renderDocs(); }
 });
+
+// ---------- Claude fills answers from the vendor's documents ----------
+
+function renderAiNotes() {
+  for (const el of $$("[data-ai]")) el.innerHTML = "";
+  for (const [id, n] of Object.entries(aiNotes)) {
+    const el = $(`[data-ai="${id}"]`);
+    if (!el) continue;
+    const quote = n.evidence ? ` “${escapeHtml(n.evidence)}”${n.document ? ` — ${escapeHtml(n.document)}` : ""}` : "";
+    el.innerHTML = n.conflict
+      ? `<div class="iq-evidence warn">⚠ Your documents suggest <strong>${escapeHtml(n.answer)}</strong>:${quote}. Please check your answer.</div>`
+      : `<div class="iq-evidence">✨ Filled by Claude from your documents:${quote}. Check it and change it if it's wrong.</div>`;
+  }
+}
+
+$("#btn-ai-fill").addEventListener("click", async () => {
+  const btn = $("#btn-ai-fill"), status = $("#ai-fill-status");
+  btn.disabled = true;
+  btn.textContent = "Reading your documents… (1–3 minutes)";
+  status.textContent = "";
+  status.classList.remove("error-text");
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/intake-ai`, {
+      method: "POST",
+      headers: { "content-type": "application/json", apikey: SUPABASE_PUBLISHABLE_KEY },
+      body: JSON.stringify({ invite, input: { documents: docs, prompt: autofillPrompt(form.elements.legalName.value || vendorName, modules) } }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || `AI help returned an error (${res.status}).`);
+    const { filled, conflicts, unknown } = applyAiFill(body.result);
+    status.textContent = `Claude filled ${filled} answer(s)${conflicts ? `; ${conflicts} of your answers disagree with your documents (marked ⚠)` : ""}${unknown ? `; ${unknown} question(s) aren't covered by the documents` : ""}. Review each one before you attest.${body.runsLeft != null ? ` ${body.runsLeft} AI run(s) left on this link.` : ""}`;
+  } catch (err) {
+    status.textContent = err.message === "Failed to fetch" ? "Couldn't reach the AI service. Check your connection and try again." : err.message;
+    status.classList.add("error-text");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "✨ Fill answers from my documents";
+  }
+});
+
+// Fills unanswered questions only; where the vendor already answered differently, adds a note.
+function applyAiFill(result) {
+  const mine = readAnswers();
+  const known = new Set(INTAKE_QUESTIONS.map((q) => q.id));
+  let filled = 0, conflicts = 0, unknown = 0;
+  for (const a of result?.answers || []) {
+    if (!known.has(a.id) || !["Yes", "No", "N/A", "Unknown"].includes(a.answer)) continue;
+    if (a.answer === "Unknown") { unknown++; continue; }
+    const note = { answer: a.answer, comment: String(a.comment || ""), evidence: String(a.evidence || ""), document: String(a.document || "") };
+    const current = mine[a.id]?.answer;
+    if (current) {
+      if (current !== a.answer) { aiNotes[a.id] = { ...note, conflict: true }; conflicts++; }
+      continue;
+    }
+    const radio = form.querySelector(`input[name="${a.id}"][value="${a.answer}"]`);
+    if (!radio) continue;
+    radio.checked = true;
+    const comment = form.elements[`${a.id}_comment`];
+    if (comment && !comment.value.trim()) comment.value = note.comment;
+    aiNotes[a.id] = note;
+    filled++;
+  }
+  const p = result?.profile || {};
+  for (const f of ["certificationDetails", "hosting", "dataLocations", "subprocessors"]) {
+    if (p[f] && form.elements[f] && !form.elements[f].value.trim()) form.elements[f].value = p[f];
+  }
+  for (const c of $$('input[name="certifications"]')) if ((p.certifications || []).includes(c.value)) c.checked = true;
+  vendorAiFill = { at: new Date().toISOString(), documents: docs.map((d) => ({ name: d.name, size: d.size, mediaType: d.mediaType })), summary: String(result?.summary || "") };
+  renderAiNotes();
+  autosave();
+  return { filled, conflicts, unknown };
+}

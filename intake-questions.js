@@ -268,6 +268,13 @@ export function validateIntake(data) {
   if (typeof data.answers !== "object" || !data.profile) throw new Error("The response file is incomplete.");
   data.modules = Array.isArray(data.modules) ? data.modules.filter((m) => m in INTAKE_MODULES) : [];
   data.followups = cleanFollowups(data.followups);
+  // Set when the vendor used Claude on their documents in the form.
+  const f = data.vendorAiFill;
+  data.vendorAiFill = f && typeof f === "object" ? {
+    at: String(f.at ?? "").slice(0, 40),
+    documents: (Array.isArray(f.documents) ? f.documents : []).slice(0, 10).map((d) => ({ name: String(d?.name ?? "").slice(0, 200), size: Number(d?.size) || 0, mediaType: String(d?.mediaType ?? "").slice(0, 100) })),
+    summary: String(f.summary ?? "").slice(0, 2000),
+  } : null;
   return data;
 }
 
