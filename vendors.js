@@ -98,15 +98,6 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
     return `V-${String(max + 1).padStart(3, "0")}`;
   };
 
-  // Questionnaire markup, built once.
-  let lastDomain = "";
-  $("#vendor-questions").innerHTML = QUESTIONS.map((q) => {
-    const head = q.domain !== lastDomain ? `<h4>${escapeHtml(q.domain)}</h4>` : "";
-    lastDomain = q.domain;
-    return `${head}<div class="q-row"><span>${escapeHtml(q.text)}${q.key ? ' <span class="tag p-high" title="Key control">key</span>' : ""}</span>
-      <select name="q_${q.id}"><option value="">–</option><option>Yes</option><option>Partial</option><option>No</option><option>N/A</option></select></div>`;
-  }).join("");
-
   // ---------- table ----------
   function render() {
     const q = $("#vendor-search").value.toLowerCase();
@@ -164,15 +155,14 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
   let editingId = null;
   let pendingAssessment = null;
   let pendingIntake = null;
+  // Control answers saved before the intake existed, kept for vendors without one.
+  let legacyAnswers = {};
 
+  // The 15 controls behind the tiers and score are worked out from the intake
+  // questionnaire (see deriveControlAnswers); there is no separate form for them.
   function readForm() {
     const data = Object.fromEntries(new FormData(form));
-    const answers = {};
-    for (const q of QUESTIONS) {
-      if (data[`q_${q.id}`]) answers[q.id] = data[`q_${q.id}`];
-      delete data[`q_${q.id}`];
-    }
-    return { ...data, answers };
+    return { ...data, answers: pendingIntake ? deriveControlAnswers(pendingIntake) : legacyAnswers };
   }
 
   function updateLiveScore() {
@@ -189,6 +179,7 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
     editingId = vendor?.id ?? null;
     pendingAssessment = vendor?.aiAssessment ?? null;
     pendingIntake = vendor?.intake ? structuredClone(vendor.intake) : null;
+    legacyAnswers = vendor?.answers || {};
     intakeDocs = [];
     askDrafts.clear();
     form.reset();
@@ -197,7 +188,6 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
     $("#btn-vendor-to-risk").classList.toggle("hidden", !vendor);
     if (vendor) {
       for (const [k, v] of Object.entries(vendor)) if (form.elements[k] && typeof v !== "object") form.elements[k].value = v ?? "";
-      for (const [id, a] of Object.entries(vendor.answers || {})) if (form.elements[`q_${id}`]) form.elements[`q_${id}`].value = a;
     }
     const panel = $("#vendor-ai-panel");
     if (pendingAssessment) showAssessment(pendingAssessment);
@@ -454,10 +444,7 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
   });
 
   function applyDerivedControls() {
-    const derived = deriveControlAnswers(pendingIntake);
-    for (const [id, a] of Object.entries(derived)) if (form.elements[`q_${id}`]) form.elements[`q_${id}`].value = a;
     updateLiveScore();
-    return derived;
   }
 
   function renderIntakeDocs() {
@@ -758,7 +745,7 @@ Access to our environment: ${v.access}
 Data types / scope: ${v.dataTypes || "(unspecified)"}
 Calculated inherent tier: ${inherentTier(v)}; questionnaire control score: ${controlScore(v) ?? "not answered"}%; calculated residual tier: ${residualTier(v)}
 
-Security questionnaire answers:
+Control summary (worked out from the intake questionnaire below):
 ${answers}
 
 Analyst notes / evidence (e.g. SOC 2 summary, questionnaire excerpts):

@@ -175,9 +175,6 @@ td:first-child, td:nth-child(8) { white-space: nowrap; }
 
 /* vendors */
 #vendor-form h3 { font-size: 1rem; margin: 1rem 0 0.25rem; }
-.questions h4 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); margin: 0.75rem 0 0.25rem; }
-.q-row { display: flex; gap: 0.75rem; align-items: center; justify-content: space-between; padding: 0.3rem 0; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
-.q-row select { width: 7.5rem; flex: none; }
 .score-line { margin: 0.75rem 0; display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
 td.overdue { color: var(--critical); font-weight: 600; }
 td:nth-child(8) { white-space: nowrap; }

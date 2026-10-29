@@ -9,7 +9,7 @@ A browser-only cyber risk management app with Claude-powered analysis. No build 
 - **✨ AI assess** – in the risk editor, Claude scores likelihood/impact, suggests a category, writes threat scenarios, and recommends prioritised controls mapped to NIST CSF 2.0 functions, plus an estimated residual score. One click applies it to the form.
 - **Vendor risk assessment** – a third-party inventory with:
   - an inherent tier from business criticality, data sensitivity and access level;
-  - a 15-question security questionnaire across governance, access control, data protection, operations, incident response, resilience and supply chain, giving a weighted control score (unanswered questions count as not demonstrated, N/A is excluded);
+  - a weighted control score across 15 key controls (governance, access control, data protection, operations, incident response, resilience and supply chain), worked out from the intake questionnaire's answers – all related answers Yes → in place, all No → missing, a mix → partial; unanswered controls count as not demonstrated and N/A is excluded;
   - a residual tier (up to two levels below inherent, never below Medium if a key control – MFA, encryption, breach notification – is missing);
   - review scheduling by inherent tier (Critical 6 months, High 12, Medium 24, Low 36) with overdue flags;
   - **✨ AI vendor review** – Claude reads the profile, answers and pasted evidence (e.g. a SOC 2 summary) and returns a risk tier, Approve / Approve with conditions / Needs more information / Reject, strengths, prioritised gaps with remediation, contract clauses to require and follow-up questions to send the vendor;
