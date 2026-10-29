@@ -1,5 +1,9 @@
 :root {
   --bg: #f4f6fa;
+  --logo-shield: #0b1f33;
+  --logo-bar: #2dd4bf;
+  --logo-word: #0b1f33;
+  --logo-ai: #0e8f80;
   --surface: #ffffff;
   --text: #1b2330;
   --muted: #667085;
@@ -30,6 +34,11 @@
     --series-2: #d95926;
     --cover-from: #111a44;
     --cover-to: #2f4ab8;
+    /* The navy shield would disappear on a dark background, so it turns light. */
+    --logo-shield: #e6eaf0;
+    --logo-bar: #0e8f80;
+    --logo-word: #e6eaf0;
+    --logo-ai: #2dd4bf;
   }
 }
 
@@ -54,7 +63,14 @@ h4 { margin: 0.75rem 0 0.25rem; }
   padding: 0.75rem 1rem; background: var(--surface); border-bottom: 1px solid var(--border);
   position: sticky; top: 0; z-index: 5;
 }
-.brand { font-size: 1.1rem; }
+.brand { font-size: 1.1rem; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+/* Posture.ai logo: shield mark plus wordmark (brand colours in light mode). */
+.logo-mark { width: 1.6em; height: 1.6em; flex: none; vertical-align: middle; }
+.logo-shield { fill: var(--logo-shield); }
+.logo-bar { fill: var(--logo-bar); }
+.logo-word { font-weight: 700; letter-spacing: -0.02em; color: var(--logo-word); }
+.logo-ai { color: var(--logo-ai); }
+.brand-tag { font-size: 0.9rem; }
 .tabs { display: flex; gap: 0.25rem; flex-wrap: wrap; }
 .tab { border: none; background: transparent; padding: 0.45rem 0.8rem; border-radius: 8px; color: var(--muted); cursor: pointer; }
 .tab.active { background: var(--bg); color: var(--text); font-weight: 600; }
@@ -270,7 +286,10 @@ details.domain summary > span:first-child { flex: 1; }
 .rh-cover { background: linear-gradient(135deg, var(--cover-from), var(--cover-to)); color: #fff; border-radius: 14px; padding: 1.5rem; position: relative; overflow: hidden; }
 .rh-cover::after { content: ""; position: absolute; right: -60px; top: -60px; width: 220px; height: 220px; border-radius: 50%; background: rgba(255,255,255,0.07); }
 .rh-cover-top { display: flex; justify-content: space-between; gap: 1rem; font-size: 0.85rem; opacity: 0.85; flex-wrap: wrap; }
-.rh-eyebrow { text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; }
+.rh-eyebrow { text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; display: inline-flex; align-items: center; gap: 0.4rem; }
+.rh-cover .logo-mark { width: 1.4em; height: 1.4em; }
+.rh-cover .logo-shield { fill: #fff; }
+.rh-cover .logo-bar { fill: #0e8f80; }
 .rh-cover h1 { font-size: clamp(1.5rem, 4vw, 2.2rem); margin: 0.5rem 0 1rem; line-height: 1.15; }
 .rh-posture { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
 .rh-posture-badge { display: flex; align-items: center; gap: 0.6rem; background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.25); border-radius: 12px; padding: 0.5rem 0.9rem; }
@@ -393,7 +412,7 @@ figcaption { font-weight: 600; font-size: 0.9rem; margin-bottom: 0.5rem; display
 /* ---------- sign-in, workspace, roles ---------- */
 .auth-screen { position: fixed; inset: 0; z-index: 50; background: linear-gradient(135deg, var(--cover-from), var(--cover-to)); display: grid; place-items: center; padding: 16px; overflow-y: auto; }
 .auth-card { background: var(--surface); color: var(--text); width: min(420px, 100%); border-radius: 16px; padding: 1.75rem; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
-.auth-brand { font-size: 1.2rem; margin-bottom: 1rem; }
+.auth-brand { font-size: 1.5rem; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; }
 .auth-card h1 { font-size: 1.35rem; margin: 0 0 0.75rem; }
 .auth-card p { margin: 0 0 0.75rem; }
 .auth-note { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem 0.75rem; font-size: 0.9rem; }
