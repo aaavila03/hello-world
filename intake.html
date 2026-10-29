@@ -21,15 +21,18 @@
     <div class="card intro">
       <h1 id="intro-title">Security intake questionnaire</h1>
       <p>Thank you for completing this questionnaire. It helps us understand how your organisation protects the data and services you provide to us. It takes about 30–45 minutes.</p>
+      <p id="load-state" class="small muted hidden"></p>
       <ul class="small">
         <li>Answer every question <strong>Yes</strong>, <strong>No</strong> or <strong>N/A</strong>. Use the comment box to add context, compensating controls or planned remediation dates – a “No” with a good explanation is better than an inaccurate “Yes”.</li>
-        <li>Your answers are saved automatically in this browser as you go, so you can come back later on the same device.</li>
+        <li class="mode-online hidden">Your answers save automatically as you go, so you can close this page and come back to the same link later, on any device. Nothing is sent until you click <strong>Submit</strong>.</li>
+        <li class="mode-file">Your answers are saved automatically in this browser as you go, so you can come back later on the same device.</li>
         <li>Have security documentation? <strong>Attach it below</strong> and you can skip questions it already covers – we'll complete those from your documents and contact you if anything is unclear.</li>
-        <li>When you're done, click <strong>Download response</strong> and email the file to your contact. Attached documents are included in the file. You can also print or save a PDF copy.</li>
-        <li>Received follow-up questions, or continuing on another device? Open the file you were sent or your earlier response here, answer, then download your response again.</li>
+        <li class="mode-online hidden">When you're done, click <strong>Submit</strong>. If your contact sends follow-up questions, open this same link to reply.</li>
+        <li class="mode-file">When you're done, click <strong>Download response</strong> and email the file to your contact. Attached documents are included in the file. You can also print or save a PDF copy.</li>
+        <li class="mode-file">Received follow-up questions, or continuing on another device? Open the file you were sent or your earlier response here, answer, then download your response again.</li>
       </ul>
       <p id="ref-line" class="small muted"></p>
-      <label class="button">Open a response or follow-up file<input id="resume-file" type="file" accept="application/json,.json" hidden /></label>
+      <label class="button mode-file">Open a response or follow-up file<input id="resume-file" type="file" accept="application/json,.json" hidden /></label>
     </div>
 
     <div id="followup-banner" class="card followup-banner hidden"></div>
@@ -47,7 +50,8 @@
         <p class="small muted">Claude reads the documents above and fills in questions you haven't answered yet, showing the passage each answer came from. It never changes answers you've already given; if your documents disagree with one, you'll see a note. Check every suggestion before you attest. Your documents are sent to Anthropic's Claude through the requester's Posture.ai service for this, and aren't stored.</p>
         <p id="ai-fill-status" class="small"></p>
       </div>
-      <p class="small muted">Attachments are added to your response file when you download it. They are not saved with your draft, so re-attach them if you come back later. Your contact may use AI (Anthropic's Claude) to help review them.</p>
+      <p class="small muted mode-online hidden">Documents are stored with your response so your contact can review them. Your contact may use AI (Anthropic's Claude) to help review them.</p>
+      <p class="small muted mode-file">Attachments are added to your response file when you download it. They are not saved with your draft, so re-attach them if you come back later. Your contact may use AI (Anthropic's Claude) to help review them.</p>
     </section>
 
     <form id="intake-form" novalidate>
@@ -159,11 +163,12 @@
     </form>
 
     <div class="intake-actions card">
-      <button id="btn-download" class="primary">Download response</button>
+      <button id="btn-submit" class="primary mode-online hidden">Submit</button>
+      <button id="btn-download" class="primary mode-file">Download response</button>
       <button id="btn-print">Print / save as PDF</button>
       <div class="spacer"></div>
       <span id="save-state" class="small muted"></span>
-      <button id="btn-clear-intake" class="danger">Clear answers</button>
+      <button id="btn-clear-intake" class="danger mode-file">Clear answers</button>
     </div>
     <p id="validation" class="error-text"></p>
   </main>

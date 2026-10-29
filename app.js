@@ -588,6 +588,12 @@ async function boot() {
     getOrgName: orgName,
     onChange: renderDashboard,
     // Hosted mode: an invite token lets the vendor's form use Claude on their documents.
+    // Hosted mode: vendors' questionnaires saved online through their links.
+    intakeServer: store.cloud ? {
+      list: () => store.listIntakeResponses(),
+      get: (ref) => store.getIntakeResponse(ref),
+      documents: (ref, opts) => store.getIntakeDocuments(ref, opts),
+    } : null,
     createInvite: cloud ? async (vendorRef) => {
       const { data: token, error } = await cloud.client.rpc("create_intake_invite", { org: cloud.org.id, vendor: vendorRef || "" });
       if (error) throw error;

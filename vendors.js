@@ -83,7 +83,7 @@ const tierClass = (t) => ({ Low: "low", Medium: "medium", High: "high", Critical
 // ---------- module ----------
 const openFollowups = (intake) => Object.values(intake?.followups || {}).filter((t) => t.status === "open").length;
 
-export function initVendors({ $, $$, escapeHtml, toast, download, initial, persist, getAI, getOrgName, addRegisterRisk, onChange, createInvite }) {
+export function initVendors({ $, $$, escapeHtml, toast, download, initial, persist, getAI, getOrgName, addRegisterRisk, onChange, createInvite, intakeServer }) {
   let vendors = initial || [];
   let sortKey = "residual", sortDir = -1;
 
@@ -131,7 +131,8 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
       const inh = inherentTier(v), res = residualTier(v), pct = controlScore(v), due = nextReview(v);
       return `<tr>
         <td>${escapeHtml(v.id)}</td>
-        <td><strong>${escapeHtml(v.name)}</strong>${v.intake ? ' <span class="tag" title="Intake questionnaire received">intake ✓</span>' : ""}${openFollowups(v.intake) ? ` <span class="tag p-medium" title="Follow-up questions not yet resolved">${openFollowups(v.intake)} follow-up${openFollowups(v.intake) > 1 ? "s" : ""} open</span>` : ""}<div class="muted small">${escapeHtml(v.service)}</div></td>
+        <td><strong>${escapeHtml(v.name)}</strong>${v.intake ? ' <span class="tag" title="Intake questionnaire received">intake ✓</span>' : ""}${newSubmission(v) ? ' <span class="tag p-medium" title="The vendor submitted their questionnaire – open the vendor to review it">response submitted</span>'
+          : responses.get(v.id)?.status === "draft" && !v.intake?.serverSubmittedAt ? ' <span class="tag" title="The vendor has started their questionnaire">in progress</span>' : ""}${openFollowups(v.intake) ? ` <span class="tag p-medium" title="Follow-up questions not yet resolved">${openFollowups(v.intake)} follow-up${openFollowups(v.intake) > 1 ? "s" : ""} open</span>` : ""}<div class="muted small">${escapeHtml(v.service)}</div></td>
         <td>${escapeHtml(v.criticality)}</td>
         <td>${escapeHtml(v.dataSensitivity)}</td>
         <td><span class="badge ${tierClass(inh)}">${inh}</span></td>
@@ -204,6 +205,7 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
     renderIntake();
     updateLiveScore();
     dialog.showModal();
+    syncOnline(vendor);
   }
 
   // ---------- intake questionnaire ----------
@@ -214,8 +216,11 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
   function renderIntake() {
     renderIntakeDocs();
     const box = $("#vendor-intake");
+    renderAnswers();
     if (!pendingIntake) {
-      box.innerHTML = `<span class="muted">No response yet. Copy the link, send it to the vendor, then import the file they send back. If they send documentation instead, use Add documents and Fill from documents.</span>`;
+      box.innerHTML = intakeServer
+        ? `<span class="muted">${serverStatus?.status === "draft" ? `The vendor has started the questionnaire (last saved ${escapeHtml(serverStatus.updatedAt.slice(0, 10))}) but hasn't submitted it yet.` : "No response yet. Save the vendor, then click Copy link for vendor and send it to them: their answers and documents appear here when they submit. You can also answer questions yourself below."}</span>`
+        : `<span class="muted">No response yet. Copy the link, send it to the vendor, then import the file they send back. If they send documentation instead, use Add documents and Fill from documents.</span>`;
       return;
     }
     pendingIntake.modules = selectedModules();
@@ -228,14 +233,62 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
       : `<div><strong>Response received</strong> ${pendingIntake.submittedAt ? escapeHtml(pendingIntake.submittedAt.slice(0, 10)) : ""}
         from ${escapeHtml(p.contactName || "unknown")}${p.contactEmail ? ` (${escapeHtml(p.contactEmail)})` : ""}
         ${pendingIntake.attested ? "" : ' <span class="tag p-high">not attested</span>'}</div>`;
+    const online = serverStatus ? `<div class="small">${serverStatus.status === "submitted" ? `Submitted online ${escapeHtml(serverStatus.submittedAt.slice(0, 10))}`
+      : `Vendor is editing their response (last saved ${escapeHtml(serverStatus.updatedAt.slice(0, 10))})${serverStatus.submittedAt ? " – changes not yet submitted" : ""}`}</div>` : "";
     box.innerHTML = `
-      ${header}
+      ${header}${online}
       <div>Intake score <strong>${s.score ?? "–"}%</strong> · ${s.counts.Yes} Yes · ${s.counts.No} No · ${s.counts["N/A"]} N/A · ${s.counts.unanswered} unanswered</div>
       <div class="small">Certifications: ${escapeHtml(p.certifications?.join(", ") || "none listed")}${p.dataLocations ? ` · Data locations: ${escapeHtml(p.dataLocations)}` : ""}${p.drLocation ? ` · DR: ${escapeHtml(p.drLocation)}` : ""}${delivery ? ` · ${escapeHtml(delivery)}` : ""}</div>
       ${s.flags.length ? `<details><summary>${s.flags.length} answer(s) needing attention</summary><ul>${flagList}</ul></details>` : ""}
       ${aiFillSection()}
       ${followupSection()}`;
   }
+
+  // ---------- the questionnaire inside the profile ----------
+  const SOURCE_TAG = { ai: "Claude", analyst: "you", "vendor-ai": "vendor, suggested by Claude" };
+
+  function renderAnswers() {
+    const answers = pendingIntake?.answers || {};
+    const active = new Set(activeQuestions(answers, selectedModules()).map((q) => q.id));
+    const domains = INTAKE_QUESTIONS.reduce((m, q) => ((m[q.domain] ||= []).push(q), m), {});
+    const rows = Object.entries(domains).map(([domain, qs]) => {
+      const shown = qs.filter((q) => active.has(q.id));
+      if (!shown.length) return "";
+      return `<h4>${escapeHtml(domain)}</h4>${shown.map((q) => {
+        const r = answers[q.id] || {};
+        const who = r.answer ? (SOURCE_TAG[r.source] || "vendor") : "";
+        return `<div class="ia-row${q.parent ? " iq-child" : ""}">
+          <div><span class="iq-id">${q.id}</span> ${escapeHtml(q.text)} ${who ? `<span class="tag">${escapeHtml(who)}</span>` : ""}</div>
+          <div class="ia-inputs">
+            <select data-ia-answer="${q.id}" aria-label="${q.id} answer">${["", "Yes", "No", "N/A"].map((a) => `<option value="${a}" ${a === (r.answer || "") ? "selected" : ""}>${a || "–"}</option>`).join("")}</select>
+            <input data-ia-comment="${q.id}" value="${escapeHtml(r.comment || "")}" placeholder="Comment" aria-label="${q.id} comment" />
+          </div>
+          ${r.evidence ? `<div class="iq-evidence">“${escapeHtml(r.evidence)}”${r.document ? ` — ${escapeHtml(r.document)}` : ""}</div>` : ""}
+        </div>`;
+      }).join("")}`;
+    }).join("");
+    $("#intake-answers-list").innerHTML = rows;
+    const answered = [...active].filter((id) => answers[id]?.answer).length;
+    $("#intake-answers-count").textContent = `${answered} / ${active.size} answered`;
+  }
+
+  // The analyst answers or corrects a question in the profile.
+  $("#intake-answers-list").addEventListener("change", (e) => {
+    const id = e.target.dataset.iaAnswer || e.target.dataset.iaComment;
+    if (!id) return;
+    const name = form.elements.name.value.trim();
+    pendingIntake ||= {
+      format: INTAKE_FORMAT, version: INTAKE_VERSION, vendorRef: editingId || "", vendorName: name,
+      profile: { legalName: name }, answers: {}, attested: false, analystCreated: true, modules: selectedModules(),
+    };
+    const r = pendingIntake.answers[id] || {};
+    const answer = e.target.dataset.iaAnswer ? e.target.value : r.answer || "";
+    const comment = e.target.dataset.iaComment ? e.target.value.trim() : r.comment || "";
+    if (!answer && !comment) delete pendingIntake.answers[id];
+    else pendingIntake.answers[id] = { answer, comment, source: "analyst" };
+    applyDerivedControls();
+    renderIntake();
+  });
 
   // ---------- follow-up questions ----------
   // Questions the analyst has started a follow-up on but not yet written.
@@ -276,7 +329,8 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
       ${rows}
       <div class="thread-actions">
         <button type="button" data-send-followups ${waiting.length ? "" : "disabled"}>Send ${waiting.length || ""} follow-up${waiting.length === 1 ? "" : "s"} to vendor</button>
-        <span class="small muted">Downloads a file for the vendor and copies the form link. They open the file on the form, reply, and send their response back for you to import.</span>
+        <span class="small muted">${intakeServer ? "Saves this vendor and copies their link. Send it to them: they'll see your questions when they open it, and their replies appear here when they submit."
+          : "Downloads a file for the vendor and copies the form link. They open the file on the form, reply, and send their response back for you to import."}</span>
       </div></details>`;
   }
 
@@ -309,6 +363,19 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
   // The file the vendor opens on the intake form: their answers (not Claude's) and the threads.
   async function sendFollowups() {
     const name = form.elements.name.value.trim() || pendingIntake.vendorName || "vendor";
+    if (intakeServer) {
+      // Online: the vendor reads the questions from the saved profile through their link.
+      if (!editingId) return toast("Save the vendor first", true);
+      saveEditor({ close: false });
+      const link = await intakeLink(name);
+      try {
+        await navigator.clipboard.writeText(link);
+        toast("Saved and link copied – send it to the vendor so they can reply");
+      } catch {
+        prompt("Saved. Send the vendor this link so they can reply:", link);
+      }
+      return;
+    }
     const answers = Object.fromEntries(Object.entries(pendingIntake.answers)
       .filter(([, r]) => !["ai", "analyst"].includes(r.source))
       .map(([id, r]) => [id, { answer: r.answer, comment: r.comment || "",
@@ -348,7 +415,7 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
   }
 
   form.elements.intakeModules.addEventListener("change", () => {
-    if (!pendingIntake) return;
+    if (!pendingIntake) return renderAnswers();
     pendingIntake.modules = selectedModules();
     applyDerivedControls();
     renderIntake();
@@ -394,17 +461,30 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
   }
 
   function renderIntakeDocs() {
+    const stored = serverDocs.filter((d) => !intakeDocs.some((x) => x.name === d.name));
     const saved = pendingIntake?.documents || [];
-    const missing = saved.filter((d) => !intakeDocs.some((x) => x.name === d.name));
+    const missing = saved.filter((d) => !intakeDocs.some((x) => x.name === d.name) && !stored.some((x) => x.name === d.name));
     $("#intake-doc-list").innerHTML = intakeDocs.map((d, i) => `<li><span>📄 ${escapeHtml(d.name)}</span>
         <span class="small muted">${(d.size / 1024 / 1024).toFixed(1)} MB</span>
         <button type="button" class="small" data-open-doc="${i}">Open</button>
         <button type="button" class="small" data-remove-doc="${i}">Remove</button></li>`).join("")
+      + stored.map((d) => `<li><span>📄 ${escapeHtml(d.name)} <span class="tag">from vendor</span></span>
+        <span class="small muted">${(d.size / 1024 / 1024).toFixed(1)} MB</span>
+        <button type="button" class="small" data-open-stored="${escapeHtml(d.name)}">Open</button></li>`).join("")
       + (missing.length ? `<li class="small muted">Not loaded: ${escapeHtml(missing.map((d) => d.name).join(", "))} – documents aren't kept in the browser, so re-import the response file to use them again.</li>` : "");
-    $("#btn-intake-fill").classList.toggle("hidden", !intakeDocs.length);
+    $("#btn-intake-fill").classList.toggle("hidden", !intakeDocs.length && !stored.length);
   }
 
-  $("#intake-doc-list").addEventListener("click", (e) => {
+  // Documents the vendor stored online, with their contents.
+  const storedWithData = () => (serverDocs.length && editingId ? intakeServer.documents(editingId, { withData: true }) : Promise.resolve([]));
+
+  $("#intake-doc-list").addEventListener("click", async (e) => {
+    const stored = e.target.dataset.openStored;
+    if (stored) {
+      const d = (await storedWithData()).find((x) => x.name === stored);
+      if (d) window.open(URL.createObjectURL(new Blob([Uint8Array.from(atob(d.data), (c) => c.charCodeAt(0))], { type: d.mediaType })), "_blank", "noopener");
+      return;
+    }
     const open = e.target.dataset.openDoc, remove = e.target.dataset.removeDoc;
     if (open != null) {
       const d = intakeDocs[Number(open)];
@@ -429,7 +509,9 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
     btn.disabled = true;
     btn.innerHTML = `<span class="spinner"></span> Reading documents… (1–3 min)`;
     try {
-      const result = await ctx.ai.fillFromDocuments(intakeDocs, autofillPrompt(name, selectedModules()));
+      const fromVendor = (await storedWithData()).filter((d) => !intakeDocs.some((x) => x.name === d.name));
+      const docsForFill = [...intakeDocs, ...fromVendor].slice(0, 5);
+      const result = await ctx.ai.fillFromDocuments(docsForFill, autofillPrompt(name, selectedModules()));
       const { filled, conflicts, unknown } = applyAiFill(result, name);
       renderIntake();
       toast(`Filled ${filled} answer(s) from the documents${conflicts ? `; ${conflicts} disagree with the vendor` : ""}${unknown ? `; ${unknown} not covered` : ""}. Review them, then click Save.`);
@@ -466,7 +548,7 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
     const rp = result.profile || {};
     for (const f of ["certificationDetails", "hosting", "dataLocations", "subprocessors"]) if (rp[f] && !p[f]) p[f] = rp[f];
     p.certifications = [...new Set([...(p.certifications || []).filter((c) => c !== "None"), ...(rp.certifications || [])])];
-    const docsMeta = intakeDocs.map((d) => ({ name: d.name, size: d.size, mediaType: d.mediaType }));
+    const docsMeta = [...intakeDocs, ...serverDocs].map((d) => ({ name: d.name, size: d.size, mediaType: d.mediaType }));
     pendingIntake.documents = [...(pendingIntake.documents || []).filter((d) => !docsMeta.some((x) => x.name === d.name)), ...docsMeta];
     pendingIntake.aiFill = { at: new Date().toISOString(), documents: docsMeta, summary: result.summary || "" };
     applyDerivedControls();
@@ -476,6 +558,8 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
   $("#btn-intake-link").addEventListener("click", async () => {
     const name = form.elements.name.value.trim();
     if (!name) return toast("Add a vendor name first", true);
+    if (intakeServer && !editingId) return toast("Save the vendor first – the link opens their questionnaire in your workspace", true);
+    if (intakeServer) saveEditor({ close: false });
     const link = await intakeLink(name);
     try {
       await navigator.clipboard.writeText(link);
@@ -498,15 +582,25 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
     if (editingId && data.vendorRef && data.vendorRef !== editingId
       && !confirm(`This response was sent for ${data.vendorRef}${data.vendorName ? ` (${data.vendorName})` : ""}, not ${editingId}. Import it anyway?`)) return;
 
+    mergeIncoming(data, Array.isArray(data.documents) ? data.documents : []);
+    const unanswered = summarizeIntake(pendingIntake).counts.unanswered;
+    const replied = Object.values(pendingIntake.followups).filter((t) => t.status === "open" && lastSpeaker(t) === "vendor").length;
+    if (replied) return toast(`Response imported – the vendor replied to ${replied} follow-up(s). Review them, resolve or ask again, then Save.`);
+    toast(intakeDocs.length && unanswered
+      ? `Intake imported with ${intakeDocs.length} document(s). ${unanswered} question(s) are unanswered – click ✨ Fill from documents.`
+      : "Intake imported. Click Save to keep it.");
+  });
+
+  // Merges a vendor's response (imported file or online submission) into the
+  // profile: keeps our follow-up threads, Claude's answers the vendor didn't
+  // replace and any earlier document fill, and updates the profile fields.
+  function mergeIncoming(data, attached = []) {
     // Keep attached documents in memory only; save just their names.
-    const attached = Array.isArray(data.documents) ? data.documents : [];
     const incoming = attached.filter((d) => d && typeof d.name === "string" && typeof d.data === "string"
       && ["application/pdf", "text/plain", "text/markdown", "text/csv"].includes(d.mediaType));
     if (incoming.length) intakeDocs = incoming;
     const prev = pendingIntake;
     const docsMeta = attached.map((d) => ({ name: String(d?.name), size: d?.size, mediaType: d?.mediaType }));
-    // A reply to our follow-ups: keep the threads, Claude's answers the vendor didn't
-    // replace, and the earlier document fill.
     const kept = Object.fromEntries(Object.entries(prev?.answers || {})
       .filter(([id, r]) => ["ai", "analyst"].includes(r.source) && !data.answers[id]?.answer));
     pendingIntake = {
@@ -515,6 +609,7 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
       followups: mergeFollowups(prev?.followups, data.followups, prev?.answers, data.answers),
       documents: [...(prev?.documents || []).filter((d) => !docsMeta.some((x) => x.name === d.name)), ...docsMeta],
       ...(prev?.aiFill ? { aiFill: prev.aiFill } : data.vendorAiFill ? { aiFill: { ...data.vendorAiFill, byVendor: true } } : {}),
+      ...(prev?.serverSubmittedAt ? { serverSubmittedAt: prev.serverSubmittedAt } : {}),
     };
     if (data.modules.length && !form.elements.intakeModules.value) form.elements.intakeModules.value = data.modules[0];
     const f = form.elements;
@@ -529,18 +624,56 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
     const declared = types.some((t) => /PII|PHI|card/i.test(t)) ? 3
       : types.some((t) => /Financial|Employee|Credentials|Confidential/i.test(t)) ? 2 : 0;
     if (declared > levels.indexOf(f.dataSensitivity.value)) f.dataSensitivity.value = levels[declared];
-
-    const derived = applyDerivedControls();
+    applyDerivedControls();
     renderIntake();
-    const unanswered = summarizeIntake(pendingIntake).counts.unanswered;
-    const replied = Object.values(pendingIntake.followups).filter((t) => t.status === "open" && lastSpeaker(t) === "vendor").length;
-    if (replied) return toast(`Response imported – the vendor replied to ${replied} follow-up(s). Review them, resolve or ask again, then Save.`);
-    toast(intakeDocs.length && unanswered
-      ? `Intake imported with ${intakeDocs.length} document(s). ${unanswered} question(s) are unanswered – click ✨ Fill from documents.`
-      : `Intake imported – ${Object.keys(derived).length} questionnaire controls filled in. Click Save to keep it.`);
-  });
+  }
+
+  // ---------- online responses (hosted mode) ----------
+  // The vendor's response saved through their link, and documents they stored.
+  let serverStatus = null, serverDocs = [];
+  const responses = new Map(); // vendor id -> { status, submitted_at, updated_at }
+
+  async function refreshResponses() {
+    if (!intakeServer) return;
+    try {
+      responses.clear();
+      for (const r of await intakeServer.list()) responses.set(r.vendor_ref, r);
+      render();
+    } catch { /* the list still works without statuses */ }
+  }
+
+  // A submission newer than the one already merged into the profile.
+  const newSubmission = (v) => {
+    const r = responses.get(v.id);
+    return r?.submitted_at && r.submitted_at !== v.intake?.serverSubmittedAt;
+  };
+
+  async function syncOnline(vendor) {
+    serverStatus = null;
+    serverDocs = [];
+    if (!intakeServer || !vendor) return;
+    const id = vendor.id;
+    try {
+      const [row, docsList] = await Promise.all([intakeServer.get(id), intakeServer.documents(id)]);
+      if (editingId !== id) return; // the analyst moved on
+      serverStatus = row ? { status: row.status, updatedAt: row.updated_at, submittedAt: row.submitted_at } : null;
+      serverDocs = docsList;
+      if (row?.submitted_at && row.submitted_at !== pendingIntake?.serverSubmittedAt) {
+        mergeIncoming(validateIntake(structuredClone(row.response)), docsList);
+        pendingIntake.serverSubmittedAt = row.submitted_at;
+        const replied = Object.values(pendingIntake.followups).filter((t) => t.status === "open" && lastSpeaker(t) === "vendor").length;
+        toast(`The vendor submitted their questionnaire on ${row.submitted_at.slice(0, 10)}${replied ? ` and replied to ${replied} follow-up(s)` : ""}. It's been added to this profile – review it, then click Save.`);
+      }
+      renderIntake();
+    } catch (err) {
+      toast(`Couldn't load the vendor's online response: ${err.message}`, true);
+    }
+  }
 
   $("#btn-vendor-add").addEventListener("click", () => openEditor(null));
+  dialog.addEventListener("close", refreshResponses);
+  if (intakeServer) $("#intake-import").classList.add("hidden");
+  refreshResponses();
   $("#btn-vendor-cancel").addEventListener("click", () => dialog.close());
   $("#btn-vendor-delete").addEventListener("click", () => {
     if (!confirm(`Delete vendor ${editingId}?`)) return;
@@ -549,16 +682,21 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
     save();
   });
 
-  form.addEventListener("submit", (e) => {
-    e.preventDefault();
+  function saveEditor({ close = true } = {}) {
     const data = { ...readForm(), aiAssessment: pendingAssessment, intake: pendingIntake };
     if (editingId) {
       vendors = vendors.map((v) => (v.id === editingId ? { ...v, ...data, updated: new Date().toISOString() } : v));
     } else {
-      vendors.push({ id: nextId(), ...data, created: new Date().toISOString() });
+      editingId = nextId();
+      vendors.push({ id: editingId, ...data, created: new Date().toISOString() });
     }
-    dialog.close();
+    if (close) dialog.close();
     save();
+  }
+
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    saveEditor();
     toast("Vendor saved");
   });
 

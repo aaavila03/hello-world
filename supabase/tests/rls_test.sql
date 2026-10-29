@@ -167,6 +167,32 @@ set role authenticated;
 select test.fails('aal1 cannot create a vendor invite', format($$select public.create_intake_invite(%L, '')$$, :'acme'));
 reset role;
 
+-- ---- vendor responses and documents (written by the intake-ai function, as the table owner) ----
+insert into public.intake_responses (org_id, vendor_ref, response, status) values (:'acme', 'V-001', '{"answers":{}}', 'submitted');
+insert into public.intake_documents (org_id, vendor_ref, name, media_type, size, data) values (:'acme', 'V-001', 'soc2.pdf', 'application/pdf', 3, 'YWJj');
+select test.fails('response vendor ref format enforced', format($$insert into public.intake_responses (org_id, vendor_ref, response) values (%L, 'x', '{}')$$, :'acme'));
+select test.fails('document type restricted', format($$insert into public.intake_documents (org_id, vendor_ref, name, media_type, size, data) values (%L, 'V-001', 'x.exe', 'application/x-msdownload', 1, 'a')$$, :'acme'));
+
+select test.login(:dave, 'aal2', 'dave@acme.test');
+set role authenticated;
+select test.ok('viewer can read vendor responses', test.count($$select 1 from public.intake_responses$$) = 1);
+select test.ok('viewer can read vendor documents', test.count($$select 1 from public.intake_documents$$) = 1);
+select test.fails('no direct response writes', format($$insert into public.intake_responses (org_id, vendor_ref, response) values (%L, 'V-002', '{}')$$, :'acme'));
+select test.fails('no response updates', $$update public.intake_responses set status = 'draft'$$);
+select test.fails('no document deletes', $$delete from public.intake_documents$$);
+reset role;
+
+select test.login(:bob, 'aal2', 'bob@other.test');
+set role authenticated;
+select test.ok('tenant isolation: Bob sees no Acme vendor responses', test.count($$select 1 from public.intake_responses$$) = 0);
+select test.ok('tenant isolation: Bob sees no Acme vendor documents', test.count($$select 1 from public.intake_documents$$) = 0);
+reset role;
+
+select test.login(:dave, 'aal1', 'dave@acme.test');
+set role authenticated;
+select test.ok('aal1 sees no vendor responses', test.count($$select 1 from public.intake_responses$$) = 0);
+reset role;
+
 -- ---- saved briefings ----
 select test.login(:carol, 'aal2', 'carol@acme.test');
 set role authenticated;

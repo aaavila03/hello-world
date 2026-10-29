@@ -224,6 +224,13 @@ details.domain summary > span:first-child { flex: 1; }
 .followup-banner { border-color: var(--high); }
 .iq-evidence.warn { border-left-color: var(--high); color: var(--text); }
 .ai-fill { margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border); }
+.intake-answers { margin: 0.75rem 0; border: 1px solid var(--border); border-radius: 10px; padding: 0.6rem 0.9rem; }
+.intake-answers > summary { cursor: pointer; font-weight: 600; }
+.intake-answers h4 { margin: 0.9rem 0 0.3rem; font-size: 0.85rem; color: var(--muted); }
+.ia-row { padding: 0.4rem 0; border-top: 1px solid var(--border); font-size: 0.875rem; }
+.ia-inputs { display: flex; gap: 0.5rem; margin-top: 0.3rem; }
+.ia-inputs select { width: auto; flex: 0 0 auto; padding: 0.2rem 0.4rem; }
+.ia-inputs input { flex: 1; padding: 0.2rem 0.5rem; font-size: 0.85rem; }
 .followup-banner a { font-family: ui-monospace, monospace; color: var(--primary); font-weight: 600; }
 .intake-actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; position: sticky; bottom: 0.5rem; }
 @media print {

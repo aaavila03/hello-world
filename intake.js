@@ -1,9 +1,13 @@
-// Vendor-facing intake questionnaire. Runs standalone: answers autosave to this
-// browser and are handed back to the requester as a downloaded JSON file. The
-// vendor can reopen that file (or a follow-up file from the requester) to
-// continue, answer follow-up questions and send it back again.
+// Vendor-facing intake questionnaire.
+//
+// Online (hosted mode, link with an invite token): the questionnaire loads from
+// and autosaves to the requester's workspace through the intake-ai function, the
+// vendor submits it there, documents are stored with it, and follow-up questions
+// from the requester appear when the vendor reopens the same link.
+// File (demo mode, or an old link without a token): answers autosave to this
+// browser and are handed back as a downloaded JSON file the requester imports.
 import { INTAKE_DOMAINS, INTAKE_QUESTIONS, INTAKE_FORMAT, INTAKE_VERSION, INTAKE_MODULES, activeQuestions,
-  validateIntake, cleanFollowups, awaitingVendor } from "./intake-questions.js";
+  validateIntake, cleanFollowups, mergeFollowups, awaitingVendor } from "./intake-questions.js";
 import { addDocuments, autofillPrompt } from "./autofill.js";
 import { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } from "./config.js";
 
@@ -24,25 +28,29 @@ let requester = params.get("org") || "";
 // Optional sections the requester turned on, e.g. ?m=cip013
 let modules = (params.get("m") || "").split(",").filter((m) => m in INTAKE_MODULES);
 const DRAFT_KEY = `riskpilot.intake.${vendorRef || vendorName || "draft"}`;
-// Invite token from the requester's link: lets this form ask Claude to fill
-// answers from the vendor's documents (hosted mode only).
+// Invite token from the requester's link (hosted mode).
 const invite = /^[0-9a-f]{64}$/.test(params.get("t") || "") ? params.get("t") : "";
-const aiAvailable = Boolean(SUPABASE_URL && invite);
+const online = Boolean(SUPABASE_URL && invite);
 
 const form = $("#intake-form");
 // Follow-up threads from the requester (see intake-questions.js).
 let threads = {};
-// Claude's suggestions from the vendor's documents, by question:
-// { answer, comment, evidence, document, conflict } (conflict: differs from the vendor's own answer).
+// Notes under questions, by id: Claude's suggestions from the vendor's documents
+// ({ answer, comment, evidence, document, conflict }) or answers the requester
+// pre-filled ({ kind: "requester" }).
 let aiNotes = {};
 let vendorAiFill = null; // { at, documents, summary }, passed on to the requester
+// Documents: online, the list stored with the response (no file contents);
+// file mode, the files themselves.
+let docs = [];
+
+for (const el of $$(".mode-online")) el.classList.toggle("hidden", !online);
+for (const el of $$(".mode-file")) el.classList.toggle("hidden", online);
 
 function renderHeader() {
   if (vendorName) $("#intro-title").textContent = `Security intake questionnaire – ${vendorName}`;
   $("#ref-line").textContent = [requester && `Requested by ${requester}`, vendorRef && `Reference ${vendorRef}`].filter(Boolean).join(" · ");
 }
-renderHeader();
-if (vendorName) form.elements.legalName.value = vendorName;
 
 // ---------- questions ----------
 const domainsInScope = () => INTAKE_DOMAINS.filter((d) => !d.module || modules.includes(d.module));
@@ -86,6 +94,8 @@ function readAnswers() {
 const readReplies = () => Object.fromEntries(Object.keys(threads)
   .map((id) => [id, form.elements[`${id}_reply`]?.value.trim() || ""]).filter(([, v]) => v));
 
+const docsMeta = () => docs.map((d) => ({ name: d.name, size: d.size, mediaType: d.mediaType }));
+
 function collect() {
   const profile = {};
   for (const f of PROFILE_FIELDS) profile[f] = form.elements[f].value.trim();
@@ -94,14 +104,16 @@ function collect() {
   // Answers the vendor kept as Claude suggested them carry the source and evidence.
   for (const [id, r] of Object.entries(answers)) {
     const n = aiNotes[id];
-    if (n && !n.conflict && n.answer === r.answer) Object.assign(r, { source: "vendor-ai", evidence: n.evidence, document: n.document });
-    else if (n?.conflict) r.aiSuggestion = { answer: n.answer, comment: n.comment, evidence: n.evidence, document: n.document };
+    if (!n || n.kind === "requester") continue;
+    if (!n.conflict && n.answer === r.answer) Object.assign(r, { source: "vendor-ai", evidence: n.evidence, document: n.document });
+    else if (n.conflict) r.aiSuggestion = { answer: n.answer, comment: n.comment, evidence: n.evidence, document: n.document };
   }
   return {
     format: INTAKE_FORMAT, version: INTAKE_VERSION,
     vendorRef, vendorName, requester, modules,
     profile, answers,
     followups: threads, replies: readReplies(), aiNotes, vendorAiFill,
+    documents: docsMeta(),
     attested: form.elements.attested.checked,
   };
 }
@@ -112,15 +124,15 @@ function restore(data) {
     for (const c of $$(`input[name="${name}"]`)) c.checked = (data.profile?.[name] || []).includes(c.value);
   }
   for (const [id, r] of Object.entries(data.answers || {})) {
-    const radio = form.querySelector(`input[name="${id}"][value="${r.answer}"]`);
+    const radio = form.querySelector(`input[name="${id}"][value="${r?.answer}"]`);
     if (radio) radio.checked = true;
-    if (form.elements[`${id}_comment`]) form.elements[`${id}_comment`].value = r.comment || "";
+    if (form.elements[`${id}_comment`]) form.elements[`${id}_comment`].value = r?.comment || "";
   }
   form.elements.attested.checked = !!data.attested;
   threads = cleanFollowups(data.followups);
   renderThreads(data.replies || {});
   aiNotes = data.aiNotes && typeof data.aiNotes === "object" ? data.aiNotes : Object.fromEntries(Object.entries(data.answers || {})
-    .filter(([, r]) => r.source === "vendor-ai").map(([id, r]) => [id, { answer: r.answer, comment: r.comment, evidence: r.evidence, document: r.document }]));
+    .filter(([, r]) => r?.source === "vendor-ai").map(([id, r]) => [id, { answer: r.answer, comment: r.comment, evidence: r.evidence, document: r.document }]));
   vendorAiFill = data.vendorAiFill || null;
   renderAiNotes();
 }
@@ -145,7 +157,7 @@ function renderThreads(replies = readReplies()) {
   banner.innerHTML = waiting.length
     ? `<strong>${waiting.length} follow-up question${waiting.length > 1 ? "s" : ""} need${waiting.length > 1 ? "" : "s"} your reply:</strong>
        ${waiting.map((id) => `<a href="#q-${id}" data-jump="${id}">${id}</a>`).join(" · ")}
-       <p class="small muted">Reply in the box under each question, then click Download response and send the file back.</p>`
+       <p class="small muted">Reply in the box under each question, then click ${online ? "Submit" : "Download response and send the file back"}.</p>`
     : "";
   for (const id of waiting) $(`[data-thread="${id}"]`)?.closest("details")?.setAttribute("open", "");
 }
@@ -184,33 +196,121 @@ function updateProgress() {
   }
 }
 
-let saveTimer;
+// ---------- server (online mode) ----------
+async function api(action, payload = {}) {
+  let res;
+  try {
+    res = await fetch(`${SUPABASE_URL}/functions/v1/intake-ai`, {
+      method: "POST",
+      headers: { "content-type": "application/json", apikey: SUPABASE_PUBLISHABLE_KEY },
+      body: JSON.stringify({ invite, action, ...payload }),
+    });
+  } catch {
+    throw new Error("Couldn't reach the server. Check your connection and try again.");
+  }
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || `The server returned an error (${res.status}).`);
+  return body;
+}
+
+const when = (iso) => new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+let submittedAt = null;
+
+function showStatus(status) {
+  submittedAt = status.submittedAt || submittedAt;
+  const unsent = status.status === "draft" && submittedAt;
+  $("#save-state").textContent = status.status === "submitted" ? `Submitted ${when(submittedAt)}`
+    : unsent ? `Changes saved ${new Date().toLocaleTimeString()} – not yet submitted`
+    : `Saved ${new Date().toLocaleTimeString()}`;
+  $("#btn-submit").textContent = submittedAt ? "Submit changes" : "Submit";
+}
+
+// ---------- saving ----------
+let saveTimer, saving = Promise.resolve();
 function autosave() {
   updateProgress();
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
+    if (online) {
+      saving = saving.then(() => api("save", { response: collect() }))
+        .then(showStatus)
+        .catch((err) => { $("#save-state").textContent = `Not saved: ${err.message}`; });
+      return;
+    }
     try {
       localStorage.setItem(DRAFT_KEY, JSON.stringify({ ...collect(), savedAt: new Date().toISOString() }));
       $("#save-state").textContent = `Draft saved ${new Date().toLocaleTimeString()}`;
     } catch {
       $("#save-state").textContent = "Autosave unavailable in this browser – download your response before closing.";
     }
-  }, 400);
+  }, online ? 1500 : 400);
 }
-form.addEventListener("input", autosave);
-form.addEventListener("change", autosave);
 
-renderDomains();
-try {
-  const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || "null");
-  if (draft) {
-    modules = [...new Set([...modules, ...(draft.modules || []).filter((m) => m in INTAKE_MODULES)])];
+let ready = false;
+form.addEventListener("input", () => ready && autosave());
+form.addEventListener("change", () => ready && autosave());
+
+async function start() {
+  if (!online) {
+    renderHeader();
+    if (vendorName) form.elements.legalName.value = vendorName;
     renderDomains();
-    restore(draft);
-    $("#save-state").textContent = "Draft restored";
+    try {
+      const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || "null");
+      if (draft) {
+        modules = [...new Set([...modules, ...(draft.modules || []).filter((m) => m in INTAKE_MODULES)])];
+        renderDomains();
+        restore(draft);
+        $("#save-state").textContent = "Draft restored";
+      }
+    } catch { /* no draft */ }
+    updateProgress();
+    ready = true;
+    return;
   }
-} catch { /* no draft */ }
-updateProgress();
+
+  const loadState = $("#load-state");
+  loadState.classList.remove("hidden");
+  loadState.textContent = "Loading your questionnaire…";
+  form.classList.add("hidden");
+  let data;
+  try {
+    data = await api("load");
+  } catch (err) {
+    loadState.textContent = err.message;
+    loadState.classList.replace("muted", "error-text");
+    $(".intake-actions").classList.add("hidden");
+    $(".attachments").classList.add("hidden");
+    return;
+  }
+  vendorName = data.vendorName || vendorName;
+  requester = data.requester || requester;
+  modules = (data.modules || []).filter((m) => m in INTAKE_MODULES);
+  renderHeader();
+  renderDomains();
+  const saved = data.response && typeof data.response === "object" ? data.response : null;
+  if (saved) {
+    restore(saved);
+  } else {
+    // First visit: start from what the requester already knows.
+    restore({ profile: data.seed?.profile || {}, answers: data.seed?.answers || {} });
+    aiNotes = Object.fromEntries(Object.keys(data.seed?.answers || {}).map((id) => [id, { kind: "requester" }]));
+    renderAiNotes();
+  }
+  if (!form.elements.legalName.value && vendorName) form.elements.legalName.value = vendorName;
+  // The requester's latest questions plus the vendor's own earlier replies.
+  threads = mergeFollowups(cleanFollowups(data.followups), cleanFollowups(saved?.followups), {}, {});
+  renderThreads(saved?.replies || {});
+  docs = data.documents || [];
+  renderDocs();
+  submittedAt = data.submittedAt;
+  if (data.status) showStatus({ status: data.status, submittedAt: data.submittedAt });
+  if (data.status === "submitted") $("#save-state").textContent = `Submitted ${when(data.submittedAt)} – changes you make are saved as a draft until you submit again`;
+  loadState.classList.add("hidden");
+  form.classList.remove("hidden");
+  updateProgress();
+  ready = true;
+}
 
 // ---------- actions ----------
 function toast(msg, isError = false) {
@@ -219,7 +319,7 @@ function toast(msg, isError = false) {
   el.classList.toggle("error", isError);
   el.classList.remove("hidden");
   clearTimeout(toast.t);
-  toast.t = setTimeout(() => el.classList.add("hidden"), 4000);
+  toast.t = setTimeout(() => el.classList.add("hidden"), 5000);
 }
 
 function problems(data) {
@@ -237,8 +337,8 @@ function problems(data) {
   return out;
 }
 
-// The response file: answers plus follow-up threads with this round's replies added.
-function responseFile() {
+// The finished response: answers plus follow-up threads with this round's replies added.
+function finalResponse() {
   const data = collect();
   const at = new Date().toISOString();
   const followups = structuredClone(threads);
@@ -246,19 +346,44 @@ function responseFile() {
     if (followups[id]?.status === "open") followups[id].messages.push({ by: "vendor", name: data.profile.contactName, text, at });
   }
   const { replies, aiNotes: _notes, ...rest } = data;
-  return { data: { ...rest, followups, documents: docs, submittedAt: at }, replies };
+  return { data: { ...rest, followups, submittedAt: at }, replies };
 }
 
-$("#btn-download").addEventListener("click", () => {
-  const { data, replies } = responseFile();
+function checkComplete(data, replies, verb) {
   const missing = problems({ ...data, replies });
   $("#validation").textContent = "";
-  if (missing.length) {
-    $("#validation").textContent = `Still needed: ${missing.join("; ")}.`;
-    const first = activeQuestions(data.answers, modules).find((q) => !data.answers[q.id]?.answer);
-    if (first) $(`[data-q="${first.id}"]`).closest("details").open = true;
-    if (!confirm(`Your response is incomplete:\n\n• ${missing.join("\n• ")}\n\nDownload it anyway?`)) return;
+  if (!missing.length) return true;
+  $("#validation").textContent = `Still needed: ${missing.join("; ")}.`;
+  const first = activeQuestions(data.answers, modules).find((q) => !data.answers[q.id]?.answer);
+  if (first) $(`[data-q="${first.id}"]`).closest("details").open = true;
+  return confirm(`Your response is incomplete:\n\n• ${missing.join("\n• ")}\n\n${verb} it anyway?`);
+}
+
+$("#btn-submit").addEventListener("click", async () => {
+  const { data, replies } = finalResponse();
+  if (!checkComplete(data, replies, "Submit")) return;
+  const btn = $("#btn-submit");
+  btn.disabled = true;
+  clearTimeout(saveTimer);
+  try {
+    await saving;
+    const status = await api("submit", { response: data });
+    // Replies are now part of the threads.
+    threads = cleanFollowups(data.followups);
+    renderThreads({});
+    showStatus(status);
+    toast(`Submitted to ${requester || "your contact"}. You can reopen this link to make changes or answer follow-up questions.`);
+  } catch (err) {
+    toast(`Couldn't submit: ${err.message}`, true);
+  } finally {
+    btn.disabled = false;
   }
+});
+
+$("#btn-download").addEventListener("click", () => {
+  const { data, replies } = finalResponse();
+  if (!checkComplete(data, replies, "Download")) return;
+  data.documents = docs;
   const safeName = (data.profile.legalName || "vendor").replace(/[^\w-]+/g, "_").slice(0, 60);
   const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }));
   const a = Object.assign(document.createElement("a"), { href: url, download: `security-intake-${safeName}.json` });
@@ -269,7 +394,7 @@ $("#btn-download").addEventListener("click", () => {
     : "Response downloaded – email it to your contact with any evidence files");
 });
 
-// Continues from an earlier response or a follow-up file sent by the requester.
+// File mode: continues from an earlier response or a follow-up file sent by the requester.
 $("#resume-file").addEventListener("change", async (e) => {
   const file = e.target.files[0];
   e.target.value = "";
@@ -289,10 +414,8 @@ $("#resume-file").addEventListener("change", async (e) => {
   renderDomains();
   form.reset();
   restore(data);
-  docs.length = 0;
-  for (const d of Array.isArray(data.documents) ? data.documents : []) {
-    if (typeof d?.name === "string" && typeof d.data === "string" && ["application/pdf", "text/plain", "text/markdown", "text/csv"].includes(d.mediaType)) docs.push(d);
-  }
+  docs = (Array.isArray(data.documents) ? data.documents : []).filter((d) => typeof d?.name === "string" && typeof d.data === "string"
+    && ["application/pdf", "text/plain", "text/markdown", "text/csv"].includes(d.mediaType));
   renderDocs();
   autosave();
   const waiting = awaitingVendor(threads).length;
@@ -319,18 +442,34 @@ $("#btn-clear-intake").addEventListener("click", () => {
 });
 
 // ---------- supporting documentation ----------
-const docs = [];
-
 function renderDocs() {
   $("#doc-list").innerHTML = docs.map((d, i) => `<li><span>📄 ${escapeHtml(d.name)}</span><span class="small muted">${(d.size / 1024 / 1024).toFixed(1)} MB</span>
     <button type="button" class="small" data-remove="${i}">Remove</button></li>`).join("");
-  $("#ai-fill").classList.toggle("hidden", !aiAvailable || !docs.length);
+  $("#ai-fill").classList.toggle("hidden", !online || !docs.length);
 }
 
 async function attach(files) {
-  const errors = await addDocuments(docs, files);
+  if (!online) {
+    const errors = await addDocuments(docs, files);
+    if (errors.length) toast(errors[0], true);
+    renderDocs();
+    return;
+  }
+  // Online: read and check each file locally (Excel is converted to text), then store it.
+  const ready = [];
+  const errors = await addDocuments(ready, files);
+  for (const d of ready) {
+    $("#save-state").textContent = `Uploading ${d.name}…`;
+    try {
+      docs = (await api("addDocument", { document: d })).documents;
+    } catch (err) {
+      errors.push(`${d.name}: ${err.message}`);
+    }
+  }
+  $("#save-state").textContent = ready.length ? "Documents saved" : $("#save-state").textContent;
   if (errors.length) toast(errors[0], true);
   renderDocs();
+  autosave();
 }
 
 const drop = $("#drop");
@@ -338,18 +477,29 @@ $("#doc-input").addEventListener("change", (e) => { attach([...e.target.files]);
 drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
 drop.addEventListener("dragleave", () => drop.classList.remove("over"));
 drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); attach([...e.dataTransfer.files]); });
-$("#doc-list").addEventListener("click", (e) => {
+$("#doc-list").addEventListener("click", async (e) => {
   const i = e.target.dataset.remove;
-  if (i != null) { docs.splice(Number(i), 1); renderDocs(); }
+  if (i == null) return;
+  if (!online) { docs.splice(Number(i), 1); renderDocs(); return; }
+  try {
+    docs = (await api("removeDocument", { name: docs[Number(i)].name })).documents;
+  } catch (err) {
+    toast(`Couldn't remove it: ${err.message}`, true);
+  }
+  renderDocs();
+  autosave();
 });
 
 // ---------- Claude fills answers from the vendor's documents ----------
-
 function renderAiNotes() {
   for (const el of $$("[data-ai]")) el.innerHTML = "";
   for (const [id, n] of Object.entries(aiNotes)) {
     const el = $(`[data-ai="${id}"]`);
     if (!el) continue;
+    if (n.kind === "requester") {
+      el.innerHTML = `<div class="iq-evidence">Pre-filled by ${escapeHtml(requester || "your contact")}. Check it and change it if it's wrong.</div>`;
+      continue;
+    }
     const quote = n.evidence ? ` “${escapeHtml(n.evidence)}”${n.document ? ` — ${escapeHtml(n.document)}` : ""}` : "";
     el.innerHTML = n.conflict
       ? `<div class="iq-evidence warn">⚠ Your documents suggest <strong>${escapeHtml(n.answer)}</strong>:${quote}. Please check your answer.</div>`
@@ -364,17 +514,11 @@ $("#btn-ai-fill").addEventListener("click", async () => {
   status.textContent = "";
   status.classList.remove("error-text");
   try {
-    const res = await fetch(`${SUPABASE_URL}/functions/v1/intake-ai`, {
-      method: "POST",
-      headers: { "content-type": "application/json", apikey: SUPABASE_PUBLISHABLE_KEY },
-      body: JSON.stringify({ invite, input: { documents: docs, prompt: autofillPrompt(form.elements.legalName.value || vendorName, modules) } }),
-    });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(body.error || `AI help returned an error (${res.status}).`);
+    const body = await api("fill", { prompt: autofillPrompt(form.elements.legalName.value || vendorName, modules) });
     const { filled, conflicts, unknown } = applyAiFill(body.result);
     status.textContent = `Claude filled ${filled} answer(s)${conflicts ? `; ${conflicts} of your answers disagree with your documents (marked ⚠)` : ""}${unknown ? `; ${unknown} question(s) aren't covered by the documents` : ""}. Review each one before you attest.${body.runsLeft != null ? ` ${body.runsLeft} AI run(s) left on this link.` : ""}`;
   } catch (err) {
-    status.textContent = err.message === "Failed to fetch" ? "Couldn't reach the AI service. Check your connection and try again." : err.message;
+    status.textContent = err.message;
     status.classList.add("error-text");
   } finally {
     btn.disabled = false;
@@ -409,8 +553,10 @@ function applyAiFill(result) {
     if (p[f] && form.elements[f] && !form.elements[f].value.trim()) form.elements[f].value = p[f];
   }
   for (const c of $$('input[name="certifications"]')) if ((p.certifications || []).includes(c.value)) c.checked = true;
-  vendorAiFill = { at: new Date().toISOString(), documents: docs.map((d) => ({ name: d.name, size: d.size, mediaType: d.mediaType })), summary: String(result?.summary || "") };
+  vendorAiFill = { at: new Date().toISOString(), documents: docsMeta(), summary: String(result?.summary || "") };
   renderAiNotes();
   autosave();
   return { filled, conflicts, unknown };
 }
+
+start();

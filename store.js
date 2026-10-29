@@ -88,6 +88,29 @@ export class CloudStore {
     return data?.report ?? null;
   }
 
+  // Vendors' online questionnaire responses: status for every vendor, or one in full.
+  async listIntakeResponses() {
+    const { data, error } = await this.client.from("intake_responses").select("vendor_ref, status, updated_at, submitted_at").eq("org_id", this.orgId);
+    if (error) throw error;
+    return data;
+  }
+
+  async getIntakeResponse(vendorRef) {
+    const { data, error } = await this.client.from("intake_responses").select("response, status, updated_at, submitted_at")
+      .eq("org_id", this.orgId).eq("vendor_ref", vendorRef).maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+
+  // Documents the vendor stored with their response; contents only when asked for.
+  async getIntakeDocuments(vendorRef, { withData = false } = {}) {
+    const { data, error } = await this.client.from("intake_documents")
+      .select(withData ? "name, media_type, size, data" : "name, media_type, size")
+      .eq("org_id", this.orgId).eq("vendor_ref", vendorRef).order("created_at");
+    if (error) throw error;
+    return data.map((d) => ({ name: d.name, mediaType: d.media_type, size: d.size, ...(withData ? { data: d.data } : {}) }));
+  }
+
   // Replaces the workspace's saved briefing (analysts and above; see save_briefing in the schema).
   async saveBriefing(report) {
     const { error } = await this.client.rpc("save_briefing", { org: this.orgId, briefing: report });
