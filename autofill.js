@@ -56,10 +56,11 @@ export async function addDocuments(list, files) {
   return errors;
 }
 
-export function autofillPrompt(vendorName) {
-  const list = INTAKE_QUESTIONS.map((q) => {
+export function autofillPrompt(vendorName, modules = []) {
+  const list = INTAKE_QUESTIONS.filter((q) => !q.module || modules.includes(q.module)).map((q) => {
     const note = q.type === "inverse" ? " (Yes is a red flag)" : q.type === "info" ? " (context only)" : "";
-    return `${q.id} [${q.domain}] ${q.text}${note}`;
+    const only = q.parent ? ` (only applies if ${q.parent} is ${q.showIf}; otherwise answer N/A)` : "";
+    return `${q.id} [${q.domain}] ${q.text}${note}${only}`;
   }).join("\n");
   return `Vendor: ${vendorName || "unknown"}\n\nAnswer every one of these questions from the documents above:\n\n${list}`;
 }

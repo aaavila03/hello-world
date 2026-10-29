@@ -26,9 +26,13 @@
         <li>Your answers are saved automatically in this browser as you go, so you can come back later on the same device.</li>
         <li>Have security documentation? <strong>Attach it below</strong> and you can skip questions it already covers – we'll complete those from your documents and contact you if anything is unclear.</li>
         <li>When you're done, click <strong>Download response</strong> and email the file to your contact. Attached documents are included in the file. You can also print or save a PDF copy.</li>
+        <li>Received follow-up questions, or continuing on another device? Open the file you were sent or your earlier response here, answer, then download your response again.</li>
       </ul>
       <p id="ref-line" class="small muted"></p>
+      <label class="button">Open a response or follow-up file<input id="resume-file" type="file" accept="application/json,.json" hidden /></label>
     </div>
+
+    <div id="followup-banner" class="card followup-banner hidden"></div>
 
     <section class="card attachments">
       <h2>Supporting documentation (optional)</h2>
@@ -51,6 +55,11 @@
           <label>Number of employees
             <select name="employees"><option value="">–</option><option>1–50</option><option>51–250</option><option>251–1,000</option><option>1,001–5,000</option><option>5,000+</option></select>
           </label>
+          <label>Ownership
+            <select name="ownership"><option value="">–</option><option>Privately held</option><option>Publicly traded</option><option>Subsidiary of another company</option><option>Government / non-profit</option></select>
+          </label>
+          <label>Parent company and stock ticker, if any <input name="parentCompany" /></label>
+          <label>Year founded <input name="yearFounded" inputmode="numeric" maxlength="4" /></label>
           <label>Your name * <input name="contactName" required /></label>
           <label>Your title <input name="contactTitle" /></label>
           <label>Your email * <input name="contactEmail" type="email" required /></label>
@@ -81,6 +90,35 @@
           </label>
           <label class="full">Hosting <input name="hosting" placeholder="e.g. AWS eu-west-1, own data centre in Frankfurt" /></label>
           <label class="full">Countries where our data will be stored or processed <input name="dataLocations" /></label>
+          <label class="full">Location of disaster recovery and backup sites (provider, region, country) <input name="drLocation" /></label>
+        </div>
+        <fieldset class="checks">
+          <legend>How is the service delivered?</legend>
+          <label><input type="checkbox" name="delivery" value="Software as a service (SaaS)" /> Software as a service (SaaS)</label>
+          <label><input type="checkbox" name="delivery" value="Platform as a service (PaaS)" /> Platform as a service (PaaS)</label>
+          <label><input type="checkbox" name="delivery" value="Infrastructure as a service (IaaS)" /> Infrastructure as a service (IaaS)</label>
+          <label><input type="checkbox" name="delivery" value="Installed in our environment" /> Installed in our environment</label>
+          <label><input type="checkbox" name="delivery" value="Managed or professional services" /> Managed or professional services</label>
+        </fieldset>
+        <fieldset class="checks">
+          <legend>Where is it hosted?</legend>
+          <label><input type="checkbox" name="hostingModel" value="Public cloud (AWS, Azure, Google Cloud, etc.)" /> Public cloud (AWS, Azure, Google Cloud, etc.)</label>
+          <label><input type="checkbox" name="hostingModel" value="Private cloud" /> Private cloud</label>
+          <label><input type="checkbox" name="hostingModel" value="Own data centre" /> Own data centre</label>
+          <label><input type="checkbox" name="hostingModel" value="Colocation data centre" /> Colocation data centre</label>
+          <label><input type="checkbox" name="hostingModel" value="Not hosted by us" /> Not hosted by us</label>
+        </fieldset>
+        <fieldset class="checks">
+          <legend>What kind of software is involved?</legend>
+          <label><input type="checkbox" name="softwareTypes" value="Commercial off-the-shelf" /> Commercial off-the-shelf</label>
+          <label><input type="checkbox" name="softwareTypes" value="Custom developed for us" /> Custom developed for us</label>
+          <label><input type="checkbox" name="softwareTypes" value="Includes open-source components" /> Includes open-source components</label>
+          <label><input type="checkbox" name="softwareTypes" value="Mobile app" /> Mobile app</label>
+          <label><input type="checkbox" name="softwareTypes" value="No software" /> No software</label>
+        </fieldset>
+        <div class="form-grid">
+          <label class="full">Applications and tools in scope, and what each is used for <textarea name="inScopeApps" rows="3" placeholder="e.g. Customer portal (SaaS), Jira (ticket tracking, no customer data)"></textarea></label>
+          <label class="full">IT services you outsource (e.g. development, security operations, help desk), with the provider – or “None” <textarea name="outsourcedServices" rows="2"></textarea></label>
         </div>
       </section>
 
@@ -107,6 +145,10 @@
 
       <section class="card">
         <h2>5. Attestation</h2>
+        <div class="form-grid">
+          <label class="full">Who contributed to these answers (name and role) <textarea name="contributors" rows="2"></textarea></label>
+          <label class="full">Approved for release by (name and title) <input name="approver" /></label>
+        </div>
         <label class="inline"><input type="checkbox" name="attested" /> I confirm that the answers in this questionnaire are accurate and complete to the best of my knowledge.</label>
       </section>
     </form>

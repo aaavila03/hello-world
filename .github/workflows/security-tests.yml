@@ -42,6 +42,8 @@ jobs:
         run: supabase/tests/check-shared.sh
       - name: AI function unit tests
         run: node --test supabase/functions/ai/handler.test.js
+      - name: Questionnaire logic tests
+        run: node --test tests/intake-questions.test.js
       - name: Vendored library checksums
         run: |
           cd vendor

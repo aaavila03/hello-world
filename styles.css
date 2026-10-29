@@ -212,6 +212,17 @@ details.domain summary > span:first-child { flex: 1; }
 .iq textarea { font-size: 0.85rem; padding: 0.3rem 0.5rem; }
 .iq.needs-comment textarea { border-color: var(--high); }
 .iq.needs-comment textarea::placeholder { color: var(--high); }
+.iq-child { margin-left: 1.5rem; border-left: 3px solid var(--border); }
+.thread { margin-top: 0.5rem; padding: 0.5rem 0.75rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
+.thread-head { font-weight: 600; font-size: 0.85rem; margin-bottom: 0.3rem; display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
+.thread-msg { font-size: 0.875rem; padding: 0.35rem 0; border-top: 1px solid var(--border); white-space: pre-wrap; overflow-wrap: anywhere; }
+.thread-msg.requester { color: var(--text); }
+.thread-msg.vendor { padding-left: 0.6rem; border-left: 3px solid var(--primary); }
+.thread-msg.system { font-style: italic; color: var(--muted); }
+.thread textarea { margin-top: 0.4rem; }
+.thread-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.4rem; }
+.followup-banner { border-color: var(--high); }
+.followup-banner a { font-family: ui-monospace, monospace; color: var(--primary); font-weight: 600; }
 .intake-actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; position: sticky; bottom: 0.5rem; }
 @media print {
   .topbar, .intake-actions, #toast, .iq textarea:placeholder-shown { display: none !important; }

@@ -10,7 +10,7 @@ const FIELDS = {
   risks: ["id", "title", "description", "asset", "category", "likelihood", "impact", "residualLikelihood", "residualImpact",
     "owner", "status", "treatment", "controls", "due", "created", "updated"],
   vendors: ["id", "name", "service", "owner", "status", "criticality", "dataSensitivity", "access", "lastAssessed", "dataTypes",
-    "notes", "answers", "aiAssessment", "intake", "created", "updated"],
+    "notes", "answers", "aiAssessment", "intake", "intakeModules", "created", "updated"],
 };
 const MAX_STRING = 20000;
 

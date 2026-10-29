@@ -83,6 +83,9 @@ PGHOST=localhost PGUSER=postgres supabase/tests/run.sh
 # AI function tests and shared-code check
 node --test supabase/functions/ai/handler.test.js
 supabase/tests/check-shared.sh
+
+# Vendor questionnaire logic
+node --test tests/intake-questions.test.js
 ```
 
 These also run automatically in GitHub Actions (`.github/workflows/security-tests.yml`).

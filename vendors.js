@@ -1,7 +1,8 @@
 // Vendor (third-party) risk assessment: inventory, security questionnaire,
 // tiering, review scheduling and Claude-powered due diligence.
 import { assessVendorOffline } from "./heuristics.js";
-import { INTAKE_QUESTIONS, INTAKE_FORMAT, INTAKE_VERSION, summarizeIntake, deriveControlAnswers, validateIntake } from "./intake-questions.js";
+import { INTAKE_QUESTIONS, INTAKE_FORMAT, INTAKE_VERSION, activeQuestions, summarizeIntake, deriveControlAnswers,
+  validateIntake, mergeFollowups, followupRounds, awaitingVendor, lastSpeaker } from "./intake-questions.js";
 import { addDocuments, autofillPrompt } from "./autofill.js";
 
 
@@ -80,6 +81,8 @@ export function isOverdue(v) {
 const tierClass = (t) => ({ Low: "low", Medium: "medium", High: "high", Critical: "critical" }[t]);
 
 // ---------- module ----------
+const openFollowups = (intake) => Object.values(intake?.followups || {}).filter((t) => t.status === "open").length;
+
 export function initVendors({ $, $$, escapeHtml, toast, download, initial, persist, getAI, getOrgName, addRegisterRisk, onChange }) {
   let vendors = initial || [];
   let sortKey = "residual", sortDir = -1;
@@ -128,7 +131,7 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
       const inh = inherentTier(v), res = residualTier(v), pct = controlScore(v), due = nextReview(v);
       return `<tr>
         <td>${escapeHtml(v.id)}</td>
-        <td><strong>${escapeHtml(v.name)}</strong>${v.intake ? ' <span class="tag" title="Intake questionnaire received">intake ✓</span>' : ""}<div class="muted small">${escapeHtml(v.service)}</div></td>
+        <td><strong>${escapeHtml(v.name)}</strong>${v.intake ? ' <span class="tag" title="Intake questionnaire received">intake ✓</span>' : ""}${openFollowups(v.intake) ? ` <span class="tag p-medium" title="Follow-up questions not yet resolved">${openFollowups(v.intake)} follow-up${openFollowups(v.intake) > 1 ? "s" : ""} open</span>` : ""}<div class="muted small">${escapeHtml(v.service)}</div></td>
         <td>${escapeHtml(v.criticality)}</td>
         <td>${escapeHtml(v.dataSensitivity)}</td>
         <td><span class="badge ${tierClass(inh)}">${inh}</span></td>
@@ -184,8 +187,9 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
   function openEditor(vendor) {
     editingId = vendor?.id ?? null;
     pendingAssessment = vendor?.aiAssessment ?? null;
-    pendingIntake = vendor?.intake ?? null;
+    pendingIntake = vendor?.intake ? structuredClone(vendor.intake) : null;
     intakeDocs = [];
+    askDrafts.clear();
     form.reset();
     $("#vendor-dialog-title").textContent = vendor ? `Edit ${vendor.id} · ${vendor.name}` : "New vendor";
     $("#btn-vendor-delete").classList.toggle("hidden", !vendor);
@@ -214,9 +218,11 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
       box.innerHTML = `<span class="muted">No response yet. Copy the link, send it to the vendor, then import the file they send back. If they send documentation instead, use Add documents and Fill from documents.</span>`;
       return;
     }
+    pendingIntake.modules = selectedModules();
     const s = summarizeIntake(pendingIntake);
     const p = pendingIntake.profile;
-    const flagList = s.flags.map((f) => `<li><span class="iq-id">${escapeHtml(f.id)}</span> ${escapeHtml(f.text)} <strong>${escapeHtml(f.answer)}</strong>${f.comment ? ` – <em>${escapeHtml(f.comment)}</em>` : ""}</li>`).join("");
+    const flagList = s.flags.map((f) => `<li><span class="iq-id">${escapeHtml(f.id)}</span> ${escapeHtml(f.text)} <strong>${escapeHtml(f.answer)}</strong>${f.comment ? ` – <em>${escapeHtml(f.comment)}</em>` : ""} ${askButton(f.id)}</li>`).join("");
+    const delivery = [...(p.delivery || []), ...(p.hostingModel || [])].join(", ");
     const header = pendingIntake.analystCreated
       ? `<div><strong>Completed from documents</strong> – no questionnaire response from the vendor</div>`
       : `<div><strong>Response received</strong> ${pendingIntake.submittedAt ? escapeHtml(pendingIntake.submittedAt.slice(0, 10)) : ""}
@@ -225,10 +231,117 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
     box.innerHTML = `
       ${header}
       <div>Intake score <strong>${s.score ?? "–"}%</strong> · ${s.counts.Yes} Yes · ${s.counts.No} No · ${s.counts["N/A"]} N/A · ${s.counts.unanswered} unanswered</div>
-      <div class="small">Certifications: ${escapeHtml(p.certifications?.join(", ") || "none listed")}${p.dataLocations ? ` · Data locations: ${escapeHtml(p.dataLocations)}` : ""}</div>
+      <div class="small">Certifications: ${escapeHtml(p.certifications?.join(", ") || "none listed")}${p.dataLocations ? ` · Data locations: ${escapeHtml(p.dataLocations)}` : ""}${p.drLocation ? ` · DR: ${escapeHtml(p.drLocation)}` : ""}${delivery ? ` · ${escapeHtml(delivery)}` : ""}</div>
       ${s.flags.length ? `<details><summary>${s.flags.length} answer(s) needing attention</summary><ul>${flagList}</ul></details>` : ""}
-      ${aiFillSection()}`;
+      ${aiFillSection()}
+      ${followupSection()}`;
   }
+
+  // ---------- follow-up questions ----------
+  // Questions the analyst has started a follow-up on but not yet written.
+  const askDrafts = new Set();
+  const selectedModules = () => (form.elements.intakeModules.value ? [form.elements.intakeModules.value] : []);
+  const askButton = (id) => pendingIntake.followups?.[id] || askDrafts.has(id) ? ""
+    : `<button type="button" class="small link" data-ask="${id}">Ask follow-up</button>`;
+
+  function followupSection() {
+    const threads = pendingIntake.followups || {};
+    const ids = [...new Set([...Object.keys(threads), ...askDrafts])];
+    if (!ids.length) return "";
+    const q = Object.fromEntries(INTAKE_QUESTIONS.map((x) => [x.id, x]));
+    const who = (m) => m.by === "requester" ? `Asked by ${escapeHtml(m.name || "us")}` : m.by === "vendor" ? `Vendor reply${m.name ? ` (${escapeHtml(m.name)})` : ""}` : "Note";
+    const waiting = awaitingVendor(threads);
+    const rows = ids.map((id) => {
+      const t = threads[id] || { status: "open", messages: [] };
+      const r = pendingIntake.answers[id];
+      const lastVendor = lastSpeaker(t) === "vendor";
+      const state = t.status === "resolved" ? '<span class="tag">resolved</span>'
+        : !t.messages.length ? '<span class="tag">draft</span>'
+        : lastVendor ? '<span class="tag p-medium">vendor replied – review</span>' : '<span class="tag">waiting on vendor</span>';
+      return `<div class="thread">
+        <div class="thread-head"><span class="iq-id">${id}</span> ${escapeHtml(q[id]?.text || "")} ${state}
+          ${followupRounds(t) ? `<span class="small muted">round ${followupRounds(t)}</span>` : ""}</div>
+        <div class="small">Answer: <strong>${escapeHtml(r?.answer || "not answered")}</strong>${r?.comment ? ` – ${escapeHtml(r.comment)}` : ""}</div>
+        ${t.messages.map((m) => `<div class="thread-msg ${m.by}"><div class="small muted">${who(m)}${m.at ? ` · ${escapeHtml(m.at.slice(0, 10))}` : ""}</div>${escapeHtml(m.text)}</div>`).join("")}
+        ${t.status === "open" ? `<textarea rows="2" data-ask-text="${id}" placeholder="${t.messages.length ? "Ask again or clarify" : "What do you need the vendor to clarify?"}"></textarea>` : ""}
+        <div class="thread-actions">
+          ${t.status === "open" ? `<button type="button" class="small" data-ask-send="${id}">Add question</button>` : ""}
+          ${t.status === "open" && t.messages.length ? `<button type="button" class="small" data-resolve="${id}">Mark resolved</button>` : ""}
+          ${t.status === "resolved" ? `<button type="button" class="small" data-reopen="${id}">Reopen</button>` : ""}
+          ${!t.messages.length ? `<button type="button" class="small" data-ask-cancel="${id}">Cancel</button>` : ""}
+        </div>
+      </div>`;
+    }).join("");
+    return `<details open><summary>Follow-up questions (${Object.values(threads).filter((t) => t.status === "open").length} open)</summary>
+      ${rows}
+      <div class="thread-actions">
+        <button type="button" data-send-followups ${waiting.length ? "" : "disabled"}>Send ${waiting.length || ""} follow-up${waiting.length === 1 ? "" : "s"} to vendor</button>
+        <span class="small muted">Downloads a file for the vendor and copies the form link. They open the file on the form, reply, and send their response back for you to import.</span>
+      </div></details>`;
+  }
+
+  $("#vendor-intake").addEventListener("click", async (e) => {
+    const d = e.target.dataset;
+    if (!pendingIntake) return;
+    const threads = (pendingIntake.followups ||= {});
+    if (d.ask) {
+      askDrafts.add(d.ask);
+      renderIntake();
+      $(`[data-ask-text="${d.ask}"]`)?.focus();
+    } else if (d.askSend) {
+      const text = $(`[data-ask-text="${d.askSend}"]`).value.trim();
+      if (!text) return toast("Write the follow-up question first", true);
+      const t = (threads[d.askSend] ||= { status: "open", messages: [] });
+      t.messages.push({ by: "requester", name: getOrgName() || "", text, at: new Date().toISOString() });
+      askDrafts.delete(d.askSend);
+      renderIntake();
+    } else if (d.askCancel) {
+      askDrafts.delete(d.askCancel);
+      renderIntake();
+    } else if (d.resolve || d.reopen) {
+      threads[d.resolve || d.reopen].status = d.resolve ? "resolved" : "open";
+      renderIntake();
+    } else if ("sendFollowups" in d) {
+      await sendFollowups();
+    }
+  });
+
+  // The file the vendor opens on the intake form: their answers (not Claude's) and the threads.
+  async function sendFollowups() {
+    const name = form.elements.name.value.trim() || pendingIntake.vendorName || "vendor";
+    const answers = Object.fromEntries(Object.entries(pendingIntake.answers)
+      .filter(([, r]) => !["ai", "analyst"].includes(r.source)).map(([id, r]) => [id, { answer: r.answer, comment: r.comment || "" }]));
+    const file = {
+      format: INTAKE_FORMAT, version: INTAKE_VERSION,
+      vendorRef: editingId || pendingIntake.vendorRef || "", vendorName: name, requester: getOrgName() || "",
+      modules: selectedModules(), profile: pendingIntake.profile, answers,
+      followups: pendingIntake.followups, attested: false,
+    };
+    download(`follow-up-${name.replace(/[^\w-]+/g, "_").slice(0, 60)}.json`, JSON.stringify(file, null, 2), "application/json");
+    const link = intakeLink(name);
+    try {
+      await navigator.clipboard.writeText(link);
+      toast("Follow-up file downloaded and form link copied – email both to the vendor, then Save");
+    } catch {
+      prompt("Follow-up file downloaded. Send it to the vendor with this form link:", link);
+    }
+  }
+
+  function intakeLink(name) {
+    const url = new URL("intake.html", location.href);
+    url.searchParams.set("v", name);
+    if (editingId) url.searchParams.set("ref", editingId);
+    if (getOrgName()) url.searchParams.set("org", getOrgName());
+    if (selectedModules().length) url.searchParams.set("m", selectedModules().join(","));
+    return url.href;
+  }
+
+  form.elements.intakeModules.addEventListener("change", () => {
+    if (!pendingIntake) return;
+    pendingIntake.modules = selectedModules();
+    applyDerivedControls();
+    renderIntake();
+  });
 
   function aiFillSection() {
     const run = pendingIntake.aiFill;
@@ -239,7 +352,7 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
     const evidence = (r) => r.evidence ? `<div class="iq-evidence">“${escapeHtml(r.evidence)}”${r.document ? ` — ${escapeHtml(r.document)}` : ""}</div>` : "";
     const rows = filled.map(([q, r]) => `<li><span class="iq-id">${q.id}</span> ${escapeHtml(q.text)}
       <select data-ai-answer="${q.id}">${["Yes", "No", "N/A"].map((a) => `<option ${a === r.answer ? "selected" : ""}>${a}</option>`).join("")}</select>
-      ${r.source === "analyst" ? '<span class="tag">changed by you</span>' : ""}${evidence(r)}</li>`).join("");
+      ${r.source === "analyst" ? '<span class="tag">changed by you</span>' : ""} ${askButton(q.id)}${evidence(r)}</li>`).join("");
     const conflictRows = conflicts.map(([q, r]) => `<li><span class="iq-id">${q.id}</span> ${escapeHtml(q.text)}
       Vendor: <strong>${escapeHtml(r.answer)}</strong> · documents suggest: <strong>${escapeHtml(r.aiSuggestion.answer)}</strong>${evidence(r.aiSuggestion)}</li>`).join("");
     return `
@@ -303,7 +416,7 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
     btn.disabled = true;
     btn.innerHTML = `<span class="spinner"></span> Reading documents… (1–3 min)`;
     try {
-      const result = await ctx.ai.fillFromDocuments(intakeDocs, autofillPrompt(name));
+      const result = await ctx.ai.fillFromDocuments(intakeDocs, autofillPrompt(name, selectedModules()));
       const { filled, conflicts, unknown } = applyAiFill(result, name);
       renderIntake();
       toast(`Filled ${filled} answer(s) from the documents${conflicts ? `; ${conflicts} disagree with the vendor` : ""}${unknown ? `; ${unknown} not covered` : ""}. Review them, then click Save.`);
@@ -320,7 +433,7 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
   function applyAiFill(result, name) {
     pendingIntake ||= {
       format: INTAKE_FORMAT, version: INTAKE_VERSION, vendorRef: editingId || "", vendorName: name,
-      profile: { legalName: name }, answers: {}, attested: false, analystCreated: true,
+      profile: { legalName: name }, answers: {}, attested: false, analystCreated: true, modules: selectedModules(),
     };
     let filled = 0, conflicts = 0, unknown = 0;
     for (const a of result.answers || []) {
@@ -350,15 +463,12 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
   $("#btn-intake-link").addEventListener("click", async () => {
     const name = form.elements.name.value.trim();
     if (!name) return toast("Add a vendor name first", true);
-    const url = new URL("intake.html", location.href);
-    url.searchParams.set("v", name);
-    if (editingId) url.searchParams.set("ref", editingId);
-    if (getOrgName()) url.searchParams.set("org", getOrgName());
+    const link = intakeLink(name);
     try {
-      await navigator.clipboard.writeText(url.href);
+      await navigator.clipboard.writeText(link);
       toast("Intake link copied – send it to the vendor");
     } catch {
-      prompt("Copy this link and send it to the vendor:", url.href);
+      prompt("Copy this link and send it to the vendor:", link);
     }
   });
 
@@ -377,9 +487,23 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
 
     // Keep attached documents in memory only; save just their names.
     const attached = Array.isArray(data.documents) ? data.documents : [];
-    intakeDocs = attached.filter((d) => d && typeof d.name === "string" && typeof d.data === "string"
+    const incoming = attached.filter((d) => d && typeof d.name === "string" && typeof d.data === "string"
       && ["application/pdf", "text/plain", "text/markdown", "text/csv"].includes(d.mediaType));
-    pendingIntake = { ...data, documents: attached.map((d) => ({ name: String(d?.name), size: d?.size, mediaType: d?.mediaType })) };
+    if (incoming.length) intakeDocs = incoming;
+    const prev = pendingIntake;
+    const docsMeta = attached.map((d) => ({ name: String(d?.name), size: d?.size, mediaType: d?.mediaType }));
+    // A reply to our follow-ups: keep the threads, Claude's answers the vendor didn't
+    // replace, and the earlier document fill.
+    const kept = Object.fromEntries(Object.entries(prev?.answers || {})
+      .filter(([id, r]) => ["ai", "analyst"].includes(r.source) && !data.answers[id]?.answer));
+    pendingIntake = {
+      ...data,
+      answers: { ...kept, ...data.answers },
+      followups: mergeFollowups(prev?.followups, data.followups, prev?.answers, data.answers),
+      documents: [...(prev?.documents || []).filter((d) => !docsMeta.some((x) => x.name === d.name)), ...docsMeta],
+      ...(prev?.aiFill ? { aiFill: prev.aiFill } : {}),
+    };
+    if (data.modules.length && !form.elements.intakeModules.value) form.elements.intakeModules.value = data.modules[0];
     const f = form.elements;
     const p = data.profile;
     if (!f.name.value && p.legalName) f.name.value = p.legalName;
@@ -396,6 +520,8 @@ export function initVendors({ $, $$, escapeHtml, toast, download, initial, persi
     const derived = applyDerivedControls();
     renderIntake();
     const unanswered = summarizeIntake(pendingIntake).counts.unanswered;
+    const replied = Object.values(pendingIntake.followups).filter((t) => t.status === "open" && lastSpeaker(t) === "vendor").length;
+    if (replied) return toast(`Response imported – the vendor replied to ${replied} follow-up(s). Review them, resolve or ask again, then Save.`);
     toast(intakeDocs.length && unanswered
       ? `Intake imported with ${intakeDocs.length} document(s). ${unanswered} question(s) are unanswered – click ✨ Fill from documents.`
       : `Intake imported – ${Object.keys(derived).length} questionnaire controls filled in. Click Save to keep it.`);
@@ -497,27 +623,36 @@ contract clauses we should require, and follow-up due-diligence questions to sen
     if (!pendingIntake) return "\nVendor intake questionnaire: not yet received.";
     const p = pendingIntake.profile;
     const s = summarizeIntake(pendingIntake);
-    const lines = INTAKE_QUESTIONS.map((q) => {
+    const lines = activeQuestions(pendingIntake.answers, selectedModules()).map((q) => {
       const r = pendingIntake.answers[q.id];
       const tag = q.type === "inverse" ? " (Yes is a red flag)" : q.type === "info" ? " (context only)" : "";
       const src = r?.source === "ai" ? " [filled by Claude from the vendor's documents, not attested by the vendor]"
         : r?.source === "analyst" ? " [set by our analyst]" : "";
       const ev = r?.evidence ? ` – evidence from ${r.document || "documents"}: "${r.evidence}"` : "";
       const conflict = r?.aiSuggestion ? ` – NOTE: the vendor's documents suggest "${r.aiSuggestion.answer}" instead${r.aiSuggestion.evidence ? ` ("${r.aiSuggestion.evidence}")` : ""}` : "";
-      return `- ${q.id} [${q.domain}] ${q.text}${tag}: ${r?.answer || "Not answered"}${src}${r?.comment ? ` – comment: ${r.comment}` : ""}${ev}${conflict}`;
+      const t = pendingIntake.followups?.[q.id];
+      const thread = t ? `\n    Follow-up (${t.status}, ${followupRounds(t)} round(s)): ${t.messages.map((m) => `${m.by === "requester" ? "We asked" : m.by === "vendor" ? "Vendor replied" : "Note"}: ${m.text}`).join(" | ")}` : "";
+      return `- ${q.id} [${q.domain}] ${q.text}${tag}: ${r?.answer || "Not answered"}${src}${r?.comment ? ` – comment: ${r.comment}` : ""}${ev}${conflict}${thread}`;
     }).join("\n");
     return `
 ${pendingIntake.analystCreated
     ? "Intake questionnaire completed by Claude from the vendor's documents (the vendor has not answered or attested it):"
     : `Vendor intake questionnaire (self-assessment completed by the vendor${pendingIntake.attested ? ", attested as accurate" : ", NOT attested"}):`}
-Company: ${p.legalName}; HQ: ${p.country}; employees: ${p.employees || "?"}; hosting: ${p.hosting || "?"}; data locations: ${p.dataLocations || "?"}
+Company: ${p.legalName}; HQ: ${p.country}; employees: ${p.employees || "?"}; ownership: ${[p.ownership, p.parentCompany].filter(Boolean).join(", ") || "?"}; founded: ${p.yearFounded || "?"}
+Delivery: ${(p.delivery || []).join(", ") || "?"}; hosting model: ${(p.hostingModel || []).join(", ") || "?"}; software: ${(p.softwareTypes || []).join(", ") || "?"}
+Hosting: ${p.hosting || "?"}; data locations: ${p.dataLocations || "?"}; DR/backup sites: ${p.drLocation || "?"}
+In-scope applications: ${p.inScopeApps || "?"}
+Outsourced IT services: ${p.outsourcedServices || "?"}
+Completed by: ${p.contributors || "?"}; approved by: ${p.approver || "?"}
 Service: ${p.serviceDescription || "?"}
 Data types: ${(p.dataTypes || []).join(", ") || "?"}; record volume: ${p.recordVolume || "?"}; access requested: ${p.access || "?"}
 Certifications: ${(p.certifications || []).join(", ") || "none"}${p.certificationDetails ? ` (${p.certificationDetails})` : ""}
 Subprocessors: ${p.subprocessors || "none listed"}
 Intake score: ${s.score ?? "n/a"}% of scored answers favourable.
 ${lines}
-${pendingIntake.aiFill ? `Documents reviewed: ${pendingIntake.aiFill.documents.map((d) => d.name).join(", ")}. Document summary: ${pendingIntake.aiFill.summary}\n` : ""}Remember vendor answers are self-attested; weigh them against independent evidence such as audit reports.`;
+${pendingIntake.aiFill ? `Documents reviewed: ${pendingIntake.aiFill.documents.map((d) => d.name).join(", ")}. Document summary: ${pendingIntake.aiFill.summary}\n` : ""}Remember vendor answers are self-attested; weigh them against independent evidence such as audit reports.
+Check the profile and answers against each other (e.g. "no outsourcing" but subcontractors host the data; data locations that differ between answers).
+A follow-up reply that doesn't answer what we asked, or repeats boilerplate, doesn't support the control: treat it as a gap and suggest a sharper follow-up question.`;
   }
 
   function showAssessment(a) {
@@ -566,6 +701,7 @@ ${pendingIntake.aiFill ? `Documents reviewed: ${pendingIntake.aiFill.documents.m
       gaps: QUESTIONS.filter((q) => v.answers?.[q.id] === "No").map((q) => q.text),
       aiRecommendation: v.aiAssessment?.recommendation,
       intakeScore: v.intake ? summarizeIntake(v.intake).score : null,
+      openFollowups: openFollowups(v.intake),
     })),
   };
 }
