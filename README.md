@@ -5,10 +5,10 @@ A browser-only cyber risk management app with Claude-powered analysis. No build 
 ## Features
 
 - **Dashboard** – KPIs (active, critical, high, average inherent/residual score, overdue actions), a clickable 5×5 likelihood × impact heat map, top risks and a category breakdown.
-- **Risk register** – add, edit, delete, search, filter and sort risks; inherent and residual scoring; owner, status, treatment, controls and due date. Export to CSV/JSON and import from JSON.
+- **Risk register** – add, edit, delete, search, filter and sort risks (click a risk's title or Edit; on desktop it opens beside the register in a split view, like vendors); inherent and residual scoring; owner, status, treatment, controls and due date. Export to CSV/JSON and import from JSON.
 - **✨ AI assess** – in the risk editor, Claude scores likelihood/impact, suggests a category, writes threat scenarios, and recommends prioritised controls mapped to NIST CSF 2.0 functions, plus an estimated residual score. One click applies it to the form.
 - **Vendor risk assessment** – a third-party inventory with:
-  - click a vendor's name (or Edit) to open it; on desktop it opens beside the list in a split view, so you can move between vendors without closing it (unsaved changes are confirmed first), and on phones and tablets it opens full screen;
+  - click a vendor's name (or Edit) to open it; on desktop it opens beside the list in a split view, so you can move between vendors without closing it, and on phones and tablets it opens full screen. Changing tabs closes it, and unsaved changes are always confirmed first;
   - an inherent tier from business criticality, data sensitivity and access level;
   - a weighted control score across 15 key controls (governance, access control, data protection, operations, incident response, resilience and supply chain), worked out from the intake questionnaire's answers – all related answers Yes → in place, all No → missing, a mix → partial; unanswered controls count as not demonstrated and N/A is excluded;
   - a residual tier (up to two levels below inherent, never below Medium if a key control – MFA, encryption, breach notification – is missing);

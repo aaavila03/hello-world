@@ -226,9 +226,9 @@ function renderTable() {
 
   $("#risk-table tbody").innerHTML = rows.map((r) => {
     const ri = rating(inherent(r)), rr = rating(residual(r));
-    return `<tr>
+    return `<tr class="${dialog.open && editingId === r.id ? "selected" : ""}">
       <td>${escapeHtml(r.id)}</td>
-      <td><strong>${escapeHtml(r.title)}</strong><div class="muted small">${escapeHtml(r.asset)}</div></td>
+      <td><button type="button" class="link row-name" data-edit="${escapeHtml(r.id)}">${escapeHtml(r.title)}</button><div class="muted small">${escapeHtml(r.asset)}</div></td>
       <td>${escapeHtml(r.category)}</td>
       <td>${escapeHtml(r.owner)}</td>
       <td><span class="badge ${ri.cls}">${inherent(r)} ${ri.label}</span></td>
@@ -247,8 +247,15 @@ function renderTable() {
 
 // ---------- navigation ----------
 function showView(name) {
+  // Leaving a tab closes the risk or vendor that's open in it (after asking about unsaved changes).
+  const current = $(".tab.active")?.dataset.view;
+  if (name !== current) {
+    if (dialog.open && !closeRiskEditor()) return false;
+    if (vendorsApi && !vendorsApi.close()) return false;
+  }
   $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.view === name));
   $$(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${name}`));
+  return true;
 }
 $$(".tab").forEach((t) => t.addEventListener("click", () => showView(t.dataset.view)));
 
@@ -272,13 +279,48 @@ $("#cell-filter").addEventListener("click", (e) => {
 });
 document.addEventListener("click", (e) => {
   const btn = e.target.closest("[data-edit]");
-  if (btn) { e.preventDefault(); openEditor(risks.find((r) => r.id === btn.dataset.edit)); }
+  if (!btn) return;
+  e.preventDefault();
+  if (dialog.open && editingId === btn.dataset.edit) return;
+  if (!confirmDiscardRisk()) return;
+  // Dashboard links open the risk in the register.
+  if (!$("#view-register").classList.contains("active") && !showView("register")) return;
+  openEditor(risks.find((r) => r.id === btn.dataset.edit));
 });
 
 // ---------- editor ----------
 const dialog = $("#risk-dialog");
 const form = $("#risk-form");
 let editingId = null;
+// On wide screens the risk opens beside the register (split view); on phones and
+// tablets it opens as a full dialog. Same behaviour as vendors (see vendors.js).
+const splitView = window.matchMedia("(min-width: 1100px)");
+let riskSnapshot = "";
+const riskState = () => JSON.stringify(Object.fromEntries(new FormData(form)));
+
+function confirmDiscardRisk() {
+  if (!dialog.open || riskState() === riskSnapshot) return true;
+  return confirm(`Discard unsaved changes to ${form.elements.title.value.trim() || "this risk"}?`);
+}
+
+// Closes the editor and restores the full-width register; false if the user keeps it open.
+function closeRiskEditor() {
+  if (!confirmDiscardRisk()) return false;
+  hideRiskEditor();
+  return true;
+}
+
+function hideRiskEditor() {
+  if (dialog.open) dialog.close();
+  afterRiskClose();
+}
+
+// Also runs on the dialog's close event, which can arrive late or not at all for the side panel.
+function afterRiskClose() {
+  if (dialog.open || !document.body.classList.contains("risk-split") && !$("#risk-table tr.selected")) return;
+  document.body.classList.remove("risk-split");
+  renderTable();
+}
 
 function openEditor(risk) {
   editingId = risk?.id ?? null;
@@ -287,15 +329,30 @@ function openEditor(risk) {
   $("#dialog-title").textContent = risk ? `Edit ${risk.id}` : "New risk";
   $("#btn-delete").classList.toggle("hidden", !risk);
   if (risk) for (const [k, v] of Object.entries(risk)) if (form.elements[k]) form.elements[k].value = v ?? "";
-  dialog.showModal();
+  riskSnapshot = riskState();
+  if (splitView.matches) {
+    document.documentElement.style.setProperty("--topbar-h", `${$(".topbar").offsetHeight}px`);
+    document.body.classList.add("risk-split");
+    if (!dialog.open) dialog.show();
+    form.scrollTop = 0;
+  } else if (!dialog.open) {
+    dialog.showModal();
+  }
+  renderTable();
 }
 
-$("#btn-add").addEventListener("click", () => openEditor(null));
-$("#btn-cancel").addEventListener("click", () => dialog.close());
+$("#btn-add").addEventListener("click", () => { if (confirmDiscardRisk()) openEditor(null); });
+$("#btn-cancel").addEventListener("click", closeRiskEditor);
+$("#btn-risk-close").addEventListener("click", closeRiskEditor);
+dialog.addEventListener("close", afterRiskClose);
+dialog.addEventListener("cancel", (e) => { if (!confirmDiscardRisk()) e.preventDefault(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && dialog.open && document.body.classList.contains("risk-split")) closeRiskEditor();
+});
 $("#btn-delete").addEventListener("click", () => {
   if (!confirm(`Delete ${editingId}?`)) return;
   risks = risks.filter((r) => r.id !== editingId);
-  dialog.close();
+  hideRiskEditor();
   saveRisks();
 });
 
@@ -311,7 +368,8 @@ form.addEventListener("submit", (e) => {
   } else {
     risks.push({ id: nextId(), ...data, created: new Date().toISOString() });
   }
-  dialog.close();
+  riskSnapshot = riskState();
+  hideRiskEditor();
   saveRisks();
   toast("Risk saved");
 });

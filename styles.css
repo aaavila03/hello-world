@@ -168,19 +168,21 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
 .dialog-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
 .dialog-head h2 { margin-top: 0; }
 .close-x { font-size: 1.1rem; color: var(--muted); padding: 0.2rem 0.4rem; }
-.vendor-name { font-weight: 600; color: var(--primary); text-align: left; padding: 0; font: inherit; font-weight: 600; cursor: pointer; }
-.vendor-name:hover { text-decoration: underline; }
-#vendor-table tr.selected td { background: var(--bg); }
-#vendor-table tr.selected td:first-child { box-shadow: inset 3px 0 0 var(--primary); }
+.vendor-name, .row-name { font: inherit; font-weight: 600; color: var(--primary); text-align: left; padding: 0; cursor: pointer; }
+.vendor-name:hover, .row-name:hover { text-decoration: underline; }
+:is(#vendor-table, #risk-table) tr.selected td { background: var(--bg); }
+:is(#vendor-table, #risk-table) tr.selected td:first-child { box-shadow: inset 3px 0 0 var(--primary); }
 
-/* Desktop split view: the vendor list on the left half, the open vendor on the right. */
+/* Desktop split view: the list on the left half, the open vendor or risk on the right. */
 @media (min-width: 1100px) {
-  body.vendor-split main { max-width: none; margin: 0 50vw 0 0; }
-  body.vendor-split #vendor-dialog {
+  :is(body.vendor-split, body.risk-split) main { max-width: none; margin: 0 50vw 0 0; }
+  body.vendor-split #vendor-dialog, body.risk-split #risk-dialog {
     position: fixed; inset: var(--topbar-h, 56px) 0 0 auto; width: 50vw; max-width: none; height: auto; max-height: none;
     margin: 0; border-radius: 0; border-left: 1px solid var(--border); box-shadow: -8px 0 24px rgba(0, 0, 0, 0.08); z-index: 4;
   }
-  body.vendor-split #vendor-form { max-height: none; height: 100%; }
+  body.vendor-split #vendor-form, body.risk-split #risk-form { max-height: none; height: 100%; }
+  /* Half the width: keep risk, tiers and Edit; hide category, owner, status and due date. */
+  body.risk-split #risk-table :is(th, td):is(:nth-child(3), :nth-child(4), :nth-child(7), :nth-child(8)) { display: none; }
   /* Half the width: keep vendor, tiers and score; hide criticality, data, next review and status. */
   body.vendor-split #vendor-table :is(th, td):is(:nth-child(3), :nth-child(4), :nth-child(8), :nth-child(9)) { display: none; }
 }

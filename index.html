@@ -209,7 +209,10 @@
   <!-- Risk editor -->
   <dialog id="risk-dialog">
     <form id="risk-form" method="dialog">
-      <h2 id="dialog-title">New risk</h2>
+      <div class="dialog-head">
+        <h2 id="dialog-title">New risk</h2>
+        <button type="button" id="btn-risk-close" class="link close-x" aria-label="Close">✕</button>
+      </div>
       <div class="form-grid">
         <label class="full">Title <input name="title" required /></label>
         <label class="full">Description <textarea name="description" rows="3" placeholder="What could happen, to what, and why?"></textarea></label>

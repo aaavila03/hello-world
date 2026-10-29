@@ -879,6 +879,13 @@ A follow-up reply that doesn't answer what we asked, or repeats boilerplate, doe
 
   return {
     render,
+    // Closes the open vendor (asking first about unsaved changes); false if the user keeps it open.
+    close() {
+      if (!dialog.open) return true;
+      if (!confirmDiscard()) return false;
+      hideEditor();
+      return true;
+    },
     all: () => vendors,
     addMany(list) {
       for (const v of list) vendors.push({ ...v, id: nextId(), created: new Date().toISOString() });
