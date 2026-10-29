@@ -194,8 +194,12 @@ For each question:
 - "evidence" is a short verbatim quote (under 300 characters) from the documents supporting the answer, or "" if Unknown.
 - "document" is the file name the evidence came from, or "".
 - "comment" briefly explains the answer and notes scope limits, report dates, exceptions or qualified opinions, under 300 characters.
+A document may be a completed questionnaire (e.g. SIG or SIG Lite, converted from a spreadsheet to CSV). Use its answers, comments and any
+follow-up history as evidence, and read it critically, as an assessor would:
+- If its answers contradict each other or its other documents (e.g. "no outsourcing" but subcontractors host the data), answer "Unknown" and name the conflict in "comment".
+- A "Yes" whose explanation or follow-up reply doesn't address the question, or repeats boilerplate written for another question, does not show the control: answer "Unknown" and say why.
 Only list certifications the documents show to be current. Use "" for profile fields the documents don't cover.
-"summary" is 2-3 sentences on what the documents cover, their dates and their main gaps.`;
+"summary" is 2-4 sentences on what the documents cover, their dates and their main gaps, including any internal contradictions or evasive answers.`;
 
 
 // minRole: lowest workspace role allowed to run the task (enforced server-side).
